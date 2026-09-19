@@ -10,12 +10,13 @@ import {
   ScreenType,
   ReportItem,
   CopyrightClaim,
+  MusicTrack,
 } from '../types';
 import {
   auditMediaContent,
   RoyaltyFreeAudioTrack,
 } from '../utils/copyrightAuditor';
-import { INITIAL_POSTS } from '../data/mockData';
+import { INITIAL_POSTS, INITIAL_STORIES } from '../data/mockData';
 import {
   isMediaCorrupted,
   getStoredMedia,
@@ -99,7 +100,18 @@ interface AppContextType {
 
   // Stories
   stories: StoryGroup[];
-  addStory: (mediaUrl: string, caption?: string) => void;
+  addStory: (
+    mediaUrl: string,
+    caption?: string,
+    music?: MusicTrack,
+    audioOptions?: {
+      audioStartTime?: number;
+      clipDuration?: number;
+      originalVolume?: number;
+      musicVolume?: number;
+      mediaType?: 'image' | 'video';
+    }
+  ) => void;
   activeStoryGroup: StoryGroup | null;
   activeStoryIndex: number;
   openStoryViewer: (userId: string, storyIndex?: number) => void;
@@ -118,9 +130,15 @@ interface AppContextType {
 
   // Modals & Safety
   isCreateModalOpen: boolean;
-  openCreateModal: (defaultTab?: 'post' | 'reel') => void;
+  openCreateModal: (defaultTab?: 'post' | 'reel', initialMusicTrack?: MusicTrack | null) => void;
   closeCreateModal: () => void;
   createModalInitialTab: 'post' | 'reel';
+  initialCreateMusicTrack: MusicTrack | null;
+
+  // Audio Track Screen / Modal
+  audioTrackModalTrack: MusicTrack | null;
+  openAudioTrackModal: (track: MusicTrack) => void;
+  closeAudioTrackModal: () => void;
 
   // Notifications
   notifications: NotificationItem[];
@@ -276,6 +294,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   // Modals state
   const [isCreateModalOpen, setIsCreateModalOpen] = useState<boolean>(false);
   const [createModalInitialTab, setCreateModalInitialTab] = useState<'post' | 'reel'>('post');
+  const [initialCreateMusicTrack, setInitialCreateMusicTrack] = useState<MusicTrack | null>(null);
+  const [audioTrackModalTrack, setAudioTrackModalTrack] = useState<MusicTrack | null>(null);
   const [shareModalItem, setShareModalItem] = useState<{ title: string; url: string; image?: string } | null>(null);
   const [reportModalData, setReportModalData] = useState<{ targetId: string; targetType: 'post' | 'user' | 'reel' | 'comment'; nameOrTitle: string } | null>(null);
   const [followModalData, setFollowModalData] = useState<{ type: 'followers' | 'following'; userId: string } | null>(null);
@@ -403,6 +423,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               aspectRatio: data.aspectRatio || 'square',
               isAiGenerated: data.isAiGenerated || false,
               copyrightClaim: data.copyrightClaim || undefined,
+              music: data.music || undefined,
+              musicTitle: data.musicTitle || data.music?.title,
+              musicArtist: data.musicArtist || data.music?.artist,
+              musicCover: data.musicCover || data.music?.coverUrl,
+              audioStartTime: data.audioStartTime ?? data.music?.audioStartTime,
+              clipDuration: data.clipDuration ?? data.music?.clipDuration,
+              originalVolume: data.originalVolume ?? data.music?.originalVolume,
+              musicVolume: data.musicVolume ?? data.music?.musicVolume,
             } as Post);
           }
 
@@ -484,8 +512,14 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               videoUrl: effectiveVideoUrl,
               thumbnailUrl: effectiveThumbnailUrl,
               localMediaKey: data.localMediaKey,
-              musicTitle: data.musicTitle || 'Original Audio',
-              musicArtist: data.musicArtist || 'LOKSY Artist',
+              musicTitle: data.musicTitle || data.music?.title || 'Original Audio',
+              musicArtist: data.musicArtist || data.music?.artist || 'LOKSY Artist',
+              musicCover: data.musicCover || data.music?.coverUrl,
+              music: data.music || undefined,
+              audioStartTime: data.audioStartTime ?? data.music?.audioStartTime,
+              clipDuration: data.clipDuration ?? data.music?.clipDuration,
+              originalVolume: data.originalVolume ?? data.music?.originalVolume,
+              musicVolume: data.musicVolume ?? data.music?.musicVolume,
               likesCount: data.likesCount ?? 0,
               commentsCount: data.commentsCount ?? 0,
               sharesCount: data.sharesCount ?? 0,
@@ -530,17 +564,26 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       unsub = onSnapshot(
         storiesCol,
         async (snapshot) => {
+          if (snapshot.empty) {
+            setStories(INITIAL_STORIES);
+            return;
+          }
+
           const groupMap = new Map<string, StoryGroup>();
           for (const docSnap of snapshot.docs) {
             const data = docSnap.data();
+            // Filter only active stories posted within the last 24 hours
+            const isWithin24h = !data.createdAtTimestamp || (Date.now() - data.createdAtTimestamp < 24 * 60 * 60 * 1000);
+            if (!isWithin24h) continue;
+
             const uId = data.userId || 'user_unknown';
             if (!groupMap.has(uId)) {
               groupMap.set(uId, {
                 userId: uId,
                 user: data.user || {
                   id: uId,
-                  name: data.userName || 'Creator',
-                  username: data.userUsername || 'creator',
+                  name: data.userName || data.username || 'Creator',
+                  username: data.userUsername || data.username || 'creator',
                   avatar: data.userAvatar || 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
                 },
                 hasUnseenStories: true,
@@ -568,11 +611,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               mediaType: data.mediaType || 'image',
               caption: data.caption || '',
               createdAt: data.createdAt || 'Just now',
-              duration: data.duration || 5,
+              duration: data.duration || data.clipDuration || 5,
+              music: data.music || undefined,
+              audioStartTime: data.audioStartTime ?? data.music?.audioStartTime,
+              clipDuration: data.clipDuration ?? data.music?.clipDuration,
+              originalVolume: data.originalVolume ?? data.music?.originalVolume,
+              musicVolume: data.musicVolume ?? data.music?.musicVolume,
             });
           }
 
-          setStories(Array.from(groupMap.values()));
+          const liveStories = Array.from(groupMap.values());
+          if (liveStories.length === 0) {
+            setStories(INITIAL_STORIES);
+          } else {
+            // Sort so current user's story group is first if present
+            liveStories.sort((a, b) => {
+              if (a.userId === currentUser.id) return -1;
+              if (b.userId === currentUser.id) return 1;
+              return 0;
+            });
+            setStories(liveStories);
+          }
         },
         (error) => {
           console.warn('[Firestore] Stories listener error:', error);
@@ -1223,44 +1282,80 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, []);
 
   // Story handlers
-  const addStory = useCallback(async (mediaUrl: string, caption?: string) => {
+  const addStory = useCallback(async (
+    mediaUrl: string,
+    caption?: string,
+    music?: MusicTrack,
+    audioOptions?: {
+      audioStartTime?: number;
+      clipDuration?: number;
+      originalVolume?: number;
+      musicVolume?: number;
+      mediaType?: 'image' | 'video';
+    }
+  ) => {
     const storyId = `story_${Date.now()}`;
     const timestamp = Date.now();
+    const isVideo = audioOptions?.mediaType === 'video' || Boolean(mediaUrl && mediaUrl.match(/\.(mp4|webm|mov)$/i));
+    const audioStartTime = audioOptions?.audioStartTime ?? music?.audioStartTime ?? 0;
+    const clipDuration = audioOptions?.clipDuration ?? music?.clipDuration ?? 15;
+    const originalVolume = audioOptions?.originalVolume ?? music?.originalVolume ?? 100;
+    const musicVolume = audioOptions?.musicVolume ?? music?.musicVolume ?? 90;
 
     if (mediaUrl && (mediaUrl.startsWith('data:') || mediaUrl.startsWith('blob:'))) {
       try {
-        await saveMediaRecord(storyId, mediaUrl, mediaUrl, 'image/jpeg');
+        await saveMediaRecord(storyId, mediaUrl, mediaUrl, isVideo ? 'video/mp4' : 'image/jpeg');
       } catch (err) {
         console.warn('[AppContext] Story media save note:', err);
       }
     }
 
+    const storyMusic: MusicTrack | undefined = music ? {
+      ...music,
+      audioStartTime,
+      clipDuration,
+      originalVolume,
+      musicVolume,
+    } : undefined;
+
     const newStoryDoc = {
       id: storyId,
       userId: currentUser.id,
+      username: currentUser.username,
+      userAvatar: currentUser.avatar,
       user: {
         id: currentUser.id,
         name: currentUser.name,
         username: currentUser.username,
         avatar: currentUser.avatar,
       },
-      mediaUrl: sanitizeUrlForFirestore(mediaUrl, DEFAULT_FALLBACK_IMAGE),
+      mediaUrl: sanitizeUrlForFirestore(mediaUrl, isVideo ? DEFAULT_FALLBACK_VIDEO : DEFAULT_FALLBACK_IMAGE),
       localMediaKey: storyId,
-      mediaType: 'image' as const,
+      mediaType: isVideo ? ('video' as const) : ('image' as const),
       caption: caption || '',
       createdAt: 'Just now',
       createdAtTimestamp: timestamp,
-      duration: 5,
+      duration: clipDuration || 15,
+      music: storyMusic,
+      audioStartTime,
+      clipDuration,
+      originalVolume,
+      musicVolume,
     };
 
     const newStory = {
       id: storyId,
       mediaUrl,
       localMediaKey: storyId,
-      mediaType: 'image' as const,
+      mediaType: isVideo ? ('video' as const) : ('image' as const),
       caption: caption || '',
       createdAt: 'Just now',
-      duration: 5,
+      duration: clipDuration || 15,
+      music: storyMusic,
+      audioStartTime,
+      clipDuration,
+      originalVolume,
+      musicVolume,
     };
 
     setStories(prev => {
@@ -1632,13 +1727,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   }, [chats, navigateTo]);
 
   // Modals
-  const openCreateModal = useCallback((defaultTab: 'post' | 'reel' = 'post') => {
+  const openCreateModal = useCallback((defaultTab: 'post' | 'reel' = 'post', initialMusicTrack: MusicTrack | null = null) => {
     setCreateModalInitialTab(defaultTab);
+    setInitialCreateMusicTrack(initialMusicTrack);
     setIsCreateModalOpen(true);
   }, []);
 
   const closeCreateModal = useCallback(() => {
     setIsCreateModalOpen(false);
+    setInitialCreateMusicTrack(null);
+  }, []);
+
+  const openAudioTrackModal = useCallback((track: MusicTrack) => {
+    setAudioTrackModalTrack(track);
+  }, []);
+
+  const closeAudioTrackModal = useCallback(() => {
+    setAudioTrackModalTrack(null);
   }, []);
 
   const openShareModal = useCallback((item: { title: string; url: string; image?: string }) => {
@@ -1981,6 +2086,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         openCreateModal,
         closeCreateModal,
         createModalInitialTab,
+        initialCreateMusicTrack,
+
+        // Audio Track Screen / Modal
+        audioTrackModalTrack,
+        openAudioTrackModal,
+        closeAudioTrackModal,
 
         notifications,
         unreadNotifsCount,

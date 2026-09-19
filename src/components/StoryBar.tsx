@@ -1,6 +1,9 @@
 import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { Plus, Sparkles, Image as ImageIcon, X } from 'lucide-react';
+import { Plus, Sparkles, Image as ImageIcon, X, Music, Volume2 } from 'lucide-react';
+import { MusicTrack } from '../types';
+import { MusicSelectorModal } from './MusicSelectorModal';
+import { MusicTrimmerMixer } from './MusicTrimmerMixer';
 
 export const StoryBar: React.FC = () => {
   const {
@@ -14,6 +17,11 @@ export const StoryBar: React.FC = () => {
   const [newCaption, setNewCaption] = useState('');
   const [selectedPreset, setSelectedPreset] = useState<string>('');
   const [customImageUrl, setCustomImageUrl] = useState('');
+  const [selectedMusicTrack, setSelectedMusicTrack] = useState<MusicTrack | null>(null);
+  const [audioStartTime, setAudioStartTime] = useState(0);
+  const [clipDuration, setClipDuration] = useState(15);
+  const [musicVolume, setMusicVolume] = useState(85);
+  const [isMusicModalOpen, setIsMusicModalOpen] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   const presets = [
@@ -39,11 +47,22 @@ export const StoryBar: React.FC = () => {
 
   const handleCreateStory = () => {
     const finalUrl = customImageUrl || selectedPreset || presets[0].url;
-    addStory(finalUrl, newCaption);
+    const finalTrack: MusicTrack | undefined = selectedMusicTrack ? {
+      ...selectedMusicTrack,
+      audioStartTime,
+      clipDuration,
+      musicVolume,
+      originalVolume: 100,
+    } : undefined;
+    addStory(finalUrl, newCaption, finalTrack, audioStartTime, clipDuration, 100, musicVolume);
     setIsAddModalOpen(false);
     setNewCaption('');
     setCustomImageUrl('');
     setSelectedPreset('');
+    setSelectedMusicTrack(null);
+    setAudioStartTime(0);
+    setClipDuration(15);
+    setMusicVolume(85);
   };
 
   const myStoryGroup = stories.find(s => s.userId === currentUser.id);
@@ -236,6 +255,76 @@ export const StoryBar: React.FC = () => {
               />
             </div>
 
+            {/* Indian Music Library Selector Trigger */}
+            <div className="pt-1 space-y-2">
+              {selectedMusicTrack ? (
+                <>
+                  <div className="flex items-center justify-between p-2.5 rounded-xl bg-gradient-to-r from-[#FF4668]/15 via-purple-500/10 to-transparent border border-[#FF4668]/30">
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <img
+                        src={selectedMusicTrack.coverUrl}
+                        alt=""
+                        className="w-8 h-8 rounded-lg object-cover border border-white/20 shrink-0"
+                      />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1">
+                          <Music className="w-3 h-3 text-[#FF4668] shrink-0" />
+                          <span className="text-xs text-white font-bold truncate">
+                            {selectedMusicTrack.title}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-gray-400 truncate block">
+                          {selectedMusicTrack.artist}
+                        </span>
+                      </div>
+                    </div>
+                    <div className="flex items-center gap-2 shrink-0 ml-2">
+                      <button
+                        type="button"
+                        onClick={() => setIsMusicModalOpen(true)}
+                        className="text-[11px] font-semibold text-[#00E5FF] hover:underline"
+                      >
+                        Change
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => setSelectedMusicTrack(null)}
+                        className="p-1 rounded-full text-gray-400 hover:text-white"
+                        title="Remove music"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Visual Waveform Trimmer & Dual Volume Mixer */}
+                  <MusicTrimmerMixer
+                    track={selectedMusicTrack}
+                    isVideo={false}
+                    audioStartTime={audioStartTime}
+                    clipDuration={clipDuration}
+                    originalVolume={100}
+                    musicVolume={musicVolume}
+                    onStartTimeChange={(time) => setAudioStartTime(time)}
+                    onDurationChange={(dur) => setClipDuration(dur)}
+                    onOriginalVolumeChange={() => {}}
+                    onMusicVolumeChange={(vol) => setMusicVolume(vol)}
+                    onRemoveMusic={() => setSelectedMusicTrack(null)}
+                  />
+                </>
+              ) : (
+                <button
+                  type="button"
+                  id="story-add-music-btn"
+                  onClick={() => setIsMusicModalOpen(true)}
+                  className="w-full py-2 px-3 rounded-xl border border-dashed border-white/20 hover:border-[#FF4668]/60 bg-white/[0.02] hover:bg-white/[0.05] text-xs font-semibold text-gray-300 hover:text-white flex items-center justify-center gap-2 transition-all"
+                >
+                  <Music className="w-3.5 h-3.5 text-[#FF4668]" />
+                  <span>Add Music / Sound (Hindi, Bhojpuri, Punjabi)</span>
+                </button>
+              )}
+            </div>
+
             {/* Action Buttons */}
             <div className="flex items-center justify-end gap-2 pt-2">
               <button
@@ -256,6 +345,19 @@ export const StoryBar: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Indian Music Library Selector Modal */}
+      <MusicSelectorModal
+        isOpen={isMusicModalOpen}
+        onClose={() => setIsMusicModalOpen(false)}
+        onSelectMusic={(track) => {
+          setSelectedMusicTrack(track);
+          setAudioStartTime(track.audioStartTime ?? 0);
+          setClipDuration(track.clipDuration ?? 15);
+          setMusicVolume(track.musicVolume ?? 85);
+        }}
+        currentSelectedMusic={selectedMusicTrack}
+      />
     </div>
   );
 };

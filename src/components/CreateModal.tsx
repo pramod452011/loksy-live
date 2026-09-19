@@ -37,6 +37,9 @@ import {
 import { CopyrightGuidelinesModal } from './CopyrightGuidelinesModal';
 import { DiscardModal } from './create/DiscardModal';
 import { AudioPickerModal, AudioTrackOption } from './create/AudioPickerModal';
+import { MusicSelectorModal } from './MusicSelectorModal';
+import { MusicTrimmerMixer } from './MusicTrimmerMixer';
+import { MusicTrack } from '../types';
 import { INSTAGRAM_FILTERS, getCombinedFilterStyle } from './create/InstagramFilters';
 import { storeMedia, registerSessionBlob } from '../utils/mediaStorage';
 import { soundManager } from '../utils/audioEngine';
@@ -49,6 +52,7 @@ export const CreateModal: React.FC = () => {
     isCreateModalOpen,
     closeCreateModal,
     createModalInitialTab,
+    initialCreateMusicTrack,
     createPost,
     createReel,
     currentUser,
@@ -80,13 +84,16 @@ export const CreateModal: React.FC = () => {
   const [customCoverUrl, setCustomCoverUrl] = useState<string>('');
   const [trimStart, setTrimStart] = useState<number>(0);
   const [trimEnd, setTrimEnd] = useState<number>(15);
+  const [clipDuration, setClipDuration] = useState<number>(15);
   const [originalAudioVolume, setOriginalAudioVolume] = useState<number>(100);
+  const [musicVolume, setMusicVolume] = useState<number>(85);
 
   // Tools menus
   const [showRatioMenu, setShowRatioMenu] = useState<boolean>(false);
   const [showZoomSlider, setShowZoomSlider] = useState<boolean>(false);
   const [showDiscardModal, setShowDiscardModal] = useState<boolean>(false);
   const [showAudioPicker, setShowAudioPicker] = useState<boolean>(false);
+  const [showCoverPickerModal, setShowCoverPickerModal] = useState<boolean>(false);
 
   // Details state
   const [caption, setCaption] = useState<string>('');
@@ -108,6 +115,8 @@ export const CreateModal: React.FC = () => {
   const [showTagPeopleModal, setShowTagPeopleModal] = useState<boolean>(false);
 
   // Audio / Music track
+  const [selectedMusicTrack, setSelectedMusicTrack] = useState<MusicTrack | null>(null);
+  const [isMusicSelectorOpen, setIsMusicSelectorOpen] = useState<boolean>(false);
   const [selectedAudio, setSelectedAudio] = useState<AudioTrackOption>({
     title: 'Kesariya (Acoustic Folk Fusion)',
     artist: 'Pritam & Arijit Singh',
@@ -284,8 +293,19 @@ export const CreateModal: React.FC = () => {
       setOriginalAudioVolume(100);
       setIsMuted(false);
       setIsPlaying(true);
+      setShowCoverPickerModal(false);
+
+      if (initialCreateMusicTrack) {
+        setSelectedMusicTrack(initialCreateMusicTrack);
+        setSelectedAudio({
+          title: initialCreateMusicTrack.title,
+          artist: initialCreateMusicTrack.artist,
+          isCommercial: true,
+          rightsHolder: initialCreateMusicTrack.album || 'Verified Audio',
+        });
+      }
     }
-  }, [isCreateModalOpen, createModalInitialTab]);
+  }, [isCreateModalOpen, createModalInitialTab, initialCreateMusicTrack]);
 
   // Clean up timers on unmount
   useEffect(() => {
@@ -388,6 +408,29 @@ export const CreateModal: React.FC = () => {
     }
   };
 
+  // Capture video frame to canvas as cover thumbnail (Instagram style)
+  const captureFrameAsCover = (seekTime?: number) => {
+    if (!videoRef.current) return;
+    try {
+      const vid = videoRef.current;
+      if (typeof seekTime === 'number') {
+        vid.currentTime = seekTime;
+      }
+      const canvas = document.createElement('canvas');
+      canvas.width = vid.videoWidth || 640;
+      canvas.height = vid.videoHeight || 640;
+      const ctx = canvas.getContext('2d');
+      if (ctx) {
+        ctx.drawImage(vid, 0, 0, canvas.width, canvas.height);
+        const dataUrl = canvas.toDataURL('image/jpeg', 0.88);
+        setCustomCoverUrl(dataUrl);
+        showToast('Cover frame captured from video! 📸');
+      }
+    } catch (err) {
+      console.warn('Cover frame capture note:', err);
+    }
+  };
+
   const toggleMute = () => {
     const next = !isMuted;
     setIsMuted(next);
@@ -433,6 +476,14 @@ export const CreateModal: React.FC = () => {
     const audioArtistToUse = forceMuteAudio ? currentUser.username : selectedAudio.artist;
     const isCommercial = !forceMuteAudio && !isMuted && !selectedAudio.title.toLowerCase().includes('muted') && (selectedAudio.isCommercial ?? true);
 
+    const musicToSave = selectedMusicTrack ? {
+      ...selectedMusicTrack,
+      audioStartTime: trimStart,
+      clipDuration,
+      originalVolume: originalAudioVolume,
+      musicVolume,
+    } : undefined;
+
     setTimeout(() => {
       if (activeType === 'reel') {
         createReel({
@@ -445,8 +496,14 @@ export const CreateModal: React.FC = () => {
               : 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=1080&auto=format&fit=crop&q=80'),
           localMediaKey: localMediaKey || undefined,
           caption: caption.trim() || 'Created with LOKSY Reels ✨ #DesiCreatives',
-          musicTitle: audioTitleToUse,
-          musicArtist: audioArtistToUse,
+          music: musicToSave,
+          musicTitle: selectedMusicTrack?.title || audioTitleToUse,
+          musicArtist: selectedMusicTrack?.artist || audioArtistToUse,
+          musicCover: selectedMusicTrack?.coverUrl,
+          audioStartTime: trimStart,
+          clipDuration,
+          originalVolume: originalAudioVolume,
+          musicVolume,
           isAiGenerated,
           isCommercialAudio: isCommercial,
         } as any);
@@ -473,8 +530,14 @@ export const CreateModal: React.FC = () => {
               ? 'portrait'
               : 'square',
           isAiGenerated,
-          musicTitle: audioTitleToUse,
-          musicArtist: audioArtistToUse,
+          music: musicToSave,
+          musicTitle: selectedMusicTrack?.title || audioTitleToUse,
+          musicArtist: selectedMusicTrack?.artist || audioArtistToUse,
+          musicCover: selectedMusicTrack?.coverUrl,
+          audioStartTime: trimStart,
+          clipDuration,
+          originalVolume: originalAudioVolume,
+          musicVolume,
           isCommercialAudio: isCommercial,
         } as any);
       }
@@ -780,6 +843,37 @@ export const CreateModal: React.FC = () => {
             id="instagram-crop-step"
             className="flex-1 relative bg-black flex items-center justify-center overflow-hidden select-none"
           >
+            {/* Instagram Aspect Ratio Quick Switcher Bar */}
+            <div
+              id="instagram-aspect-ratio-selector-bar"
+              className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 p-1 rounded-full bg-black/75 backdrop-blur-xl border border-white/20 shadow-2xl"
+            >
+              {[
+                { id: '1:1', label: '1:1 Square', icon: '■' },
+                { id: '4:5', label: '4:5 Portrait', icon: '▮' },
+                { id: '9:16', label: '9:16 Reel', icon: '📱' },
+                { id: '16:9', label: '16:9 Landscape', icon: '▬' },
+              ].map((opt) => {
+                const isActive = aspectRatio === opt.id;
+                return (
+                  <button
+                    key={opt.id}
+                    id={`ratio-btn-${opt.id.replace(':', '-')}`}
+                    type="button"
+                    onClick={() => setAspectRatio(opt.id as AspectRatioOption)}
+                    className={`px-3 py-1.5 rounded-full text-xs font-semibold transition-all flex items-center gap-1.5 ${
+                      isActive
+                        ? 'bg-white text-black shadow-lg scale-105 font-bold'
+                        : 'text-gray-300 hover:text-white hover:bg-white/10'
+                    }`}
+                  >
+                    <span className="text-[10px] opacity-75">{opt.icon}</span>
+                    <span>{opt.label}</span>
+                  </button>
+                );
+              })}
+            </div>
+
             {/* Framed Media Container */}
             <div
               className={`relative overflow-hidden transition-all duration-300 flex items-center justify-center ${getAspectRatioClasses()}`}
@@ -905,6 +999,24 @@ export const CreateModal: React.FC = () => {
                   </div>
                 )}
               </div>
+
+              {/* Music / Sound Button */}
+              <button
+                id="instagram-crop-music-btn"
+                type="button"
+                onClick={() => setIsMusicSelectorOpen(true)}
+                className={`h-9 px-3 rounded-full backdrop-blur-md border flex items-center gap-1.5 shadow-lg transition-transform active:scale-95 select-none ${
+                  selectedMusicTrack
+                    ? 'bg-gradient-to-r from-[#FF4668] to-[#FF8A00] text-white border-transparent'
+                    : 'bg-black/65 text-white border-white/20 hover:bg-black/80'
+                }`}
+                title="Add Music / Sound"
+              >
+                <Music className="w-3.5 h-3.5" />
+                <span className="text-xs font-semibold max-w-[130px] truncate">
+                  {selectedMusicTrack ? selectedMusicTrack.title : 'Add Music'}
+                </span>
+              </button>
             </div>
 
             {/* Bottom-Right Video Play / Mute Controls */}
@@ -1185,57 +1297,89 @@ export const CreateModal: React.FC = () => {
 
                   {/* Audio Volume & Background Track */}
                   <div className="space-y-3 pt-3 border-t border-white/5">
-                    <label className="text-xs font-bold text-gray-200 block flex items-center justify-between">
-                      <span className="flex items-center gap-1.5">
-                        <Music className="w-3.5 h-3.5 text-[#FF8A00]" />
-                        <span>Audio & Music</span>
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() => setShowAudioPicker(true)}
-                        className="text-[11px] text-[#0095F6] hover:underline font-semibold"
-                      >
-                        Change Music
-                      </button>
-                    </label>
+                    {selectedMusicTrack ? (
+                      <MusicTrimmerMixer
+                        track={selectedMusicTrack}
+                        audioStartTime={trimStart}
+                        onChangeStartTime={setTrimStart}
+                        clipDuration={clipDuration}
+                        onChangeClipDuration={setClipDuration}
+                        originalVolume={originalAudioVolume}
+                        onChangeOriginalVolume={(v) => {
+                          setOriginalAudioVolume(v);
+                          if (videoRef.current) {
+                            videoRef.current.volume = v / 100;
+                          }
+                        }}
+                        musicVolume={musicVolume}
+                        onChangeMusicVolume={setMusicVolume}
+                        hasOriginalAudio={mediaType === 'video'}
+                        onChangeTrack={() => setIsMusicSelectorOpen(true)}
+                        onRemoveTrack={() => setSelectedMusicTrack(null)}
+                      />
+                    ) : (
+                      <div className="space-y-3">
+                        <label className="text-xs font-bold text-gray-200 block flex items-center justify-between">
+                          <span className="flex items-center gap-1.5">
+                            <Music className="w-3.5 h-3.5 text-[#FF8A00]" />
+                            <span>Audio & Music</span>
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => setIsMusicSelectorOpen(true)}
+                            className="text-[11px] text-[#00E5FF] hover:underline font-semibold"
+                          >
+                            Add Song
+                          </button>
+                        </label>
 
-                    {/* Selected Audio Card */}
-                    <div
-                      onClick={() => setShowAudioPicker(true)}
-                      className="p-2.5 rounded-xl bg-white/[0.04] border border-white/10 hover:border-white/20 transition-all flex items-center justify-between cursor-pointer group"
-                    >
-                      <div className="min-w-0 pr-2">
-                        <div className="text-xs font-semibold text-white truncate group-hover:text-[#00E5FF] transition-colors">
-                          {selectedAudio.title}
+                        {/* Prompt to add Music */}
+                        <div
+                          onClick={() => setIsMusicSelectorOpen(true)}
+                          className="p-3 rounded-2xl bg-gradient-to-r from-[#FF4668]/10 via-[#FF8A00]/10 to-[#00E5FF]/10 border border-white/10 hover:border-[#00E5FF]/40 transition-all flex items-center justify-between cursor-pointer group"
+                        >
+                          <div className="flex items-center gap-2.5 min-w-0 pr-2">
+                            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-[#FF4668] to-[#FF8A00] flex items-center justify-center shrink-0 shadow-md">
+                              <Music className="w-4 h-4 text-white" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="text-xs font-bold text-white truncate group-hover:text-[#00E5FF] transition-colors">
+                                Add Indian Music / Soundtrack
+                              </div>
+                              <div className="text-[10px] text-gray-400 truncate">
+                                Bhojpuri, Hindi, Punjabi & JioSaavn search
+                              </div>
+                            </div>
+                          </div>
+                          <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-white shrink-0" />
                         </div>
-                        <div className="text-[10px] text-gray-400 truncate">
-                          {selectedAudio.artist}
-                        </div>
-                      </div>
-                      <ChevronRight className="w-4 h-4 text-gray-400 group-hover:text-white shrink-0" />
-                    </div>
 
-                    {/* Video Audio Volume Slider */}
-                    {mediaType === 'video' && (
-                      <div className="space-y-1.5">
-                        <div className="flex justify-between text-[11px] text-gray-300">
-                          <span>Original Video Volume</span>
-                          <span className="font-mono text-gray-400">{originalAudioVolume}%</span>
-                        </div>
-                        <input
-                          type="range"
-                          min={0}
-                          max={100}
-                          value={originalAudioVolume}
-                          onChange={(e) => {
-                            const v = parseInt(e.target.value, 10);
-                            setOriginalAudioVolume(v);
-                            if (videoRef.current) {
-                              videoRef.current.volume = v / 100;
-                            }
-                          }}
-                          className="w-full accent-[#0095F6] cursor-pointer"
-                        />
+                        {/* Video Audio Volume Slider */}
+                        {mediaType === 'video' && (
+                          <div className="space-y-1.5 bg-white/[0.03] p-3 rounded-xl border border-white/5">
+                            <div className="flex justify-between text-[11px] text-gray-300 font-semibold">
+                              <div className="flex items-center gap-1.5">
+                                <Video className="w-3.5 h-3.5 text-[#00E5FF]" />
+                                <span>Original Video Audio Volume</span>
+                              </div>
+                              <span className="font-mono text-[#00E5FF]">{originalAudioVolume}%</span>
+                            </div>
+                            <input
+                              type="range"
+                              min={0}
+                              max={100}
+                              value={originalAudioVolume}
+                              onChange={(e) => {
+                                const v = parseInt(e.target.value, 10);
+                                setOriginalAudioVolume(v);
+                                if (videoRef.current) {
+                                  videoRef.current.volume = v / 100;
+                                }
+                              }}
+                              className="w-full accent-[#00E5FF] cursor-pointer"
+                            />
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
@@ -1302,40 +1446,107 @@ export const CreateModal: React.FC = () => {
                 </div>
               </div>
 
-              {/* Caption Textarea & Emoji Bar */}
-              <div className="p-4 border-b border-white/5 space-y-2">
-                <textarea
-                  id="instagram-caption-textarea"
-                  value={caption}
-                  onChange={(e) => setCaption(e.target.value)}
-                  placeholder="Write a caption..."
-                  rows={4}
-                  maxLength={2200}
-                  className="w-full bg-transparent border-none text-xs text-white placeholder-gray-500 focus:outline-none resize-none leading-relaxed"
-                />
+              {/* Caption & Media Thumbnail Row (Instagram layout) */}
+              <div className="p-4 border-b border-white/5 flex gap-3.5 items-start">
+                {/* Media / Cover Thumbnail box */}
+                <div
+                  id="create-modal-details-cover-box"
+                  className="relative w-16 h-20 rounded-xl bg-black overflow-hidden border border-white/15 shrink-0 group cursor-pointer shadow-lg"
+                  onClick={() => {
+                    if (mediaType === 'video') {
+                      setShowCoverPickerModal(true);
+                    }
+                  }}
+                  title={mediaType === 'video' ? 'Tap to choose cover frame' : 'Media preview'}
+                >
+                  <img
+                    src={customCoverUrl || (mediaType === 'image' ? mediaUrl : 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&auto=format&fit=crop&q=80')}
+                    alt="Cover preview"
+                    className="w-full h-full object-cover group-hover:scale-105 transition-transform"
+                    referrerPolicy="no-referrer"
+                  />
+                  {mediaType === 'video' && (
+                    <div className="absolute inset-0 bg-black/40 flex flex-col items-center justify-end p-1 transition-opacity group-hover:bg-black/20">
+                      <span className="text-[9px] font-bold text-white bg-black/70 px-1.5 py-0.5 rounded-full backdrop-blur-sm border border-white/20">
+                        Cover
+                      </span>
+                    </div>
+                  )}
+                </div>
 
-                {/* Quick Emoji Bar & Character Counter */}
-                <div className="flex items-center justify-between pt-1">
-                  <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
-                    {['❤️', '🔥', '👏', '😍', '✨', '🇮🇳', '🙌', '💯'].map((em) => (
-                      <button
-                        key={em}
-                        type="button"
-                        onClick={() => setCaption((prev) => prev + em)}
-                        className="text-sm p-1 hover:scale-125 transition-transform"
-                      >
-                        {em}
-                      </button>
-                    ))}
+                {/* Caption Textarea & Quick Emoji Bar */}
+                <div className="flex-1 min-w-0 space-y-2">
+                  <textarea
+                    id="instagram-caption-textarea"
+                    value={caption}
+                    onChange={(e) => setCaption(e.target.value)}
+                    placeholder="Write a caption..."
+                    rows={3}
+                    maxLength={2200}
+                    className="w-full bg-transparent border-none text-xs text-white placeholder-gray-500 focus:outline-none resize-none leading-relaxed"
+                  />
+
+                  {/* Quick Emoji Bar & Character Counter */}
+                  <div className="flex items-center justify-between pt-1">
+                    <div className="flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+                      {['❤️', '🔥', '👏', '😍', '✨', '🇮🇳', '🙌', '💯'].map((em) => (
+                        <button
+                          key={em}
+                          type="button"
+                          onClick={() => setCaption((prev) => prev + em)}
+                          className="text-sm p-0.5 hover:scale-125 transition-transform"
+                        >
+                          {em}
+                        </button>
+                      ))}
+                    </div>
+                    <span className="text-[10px] text-gray-500 font-mono shrink-0 pl-2">
+                      {caption.length}/2,200
+                    </span>
                   </div>
-                  <span className="text-[10px] text-gray-500 font-mono shrink-0 pl-2">
-                    {caption.length}/2,200
-                  </span>
                 </div>
               </div>
 
+              {/* Cover Photo Scrubber Row (For Videos / Reels) */}
+              {mediaType === 'video' && (
+                <div
+                  id="create-modal-cover-picker-row"
+                  className="p-3.5 border-b border-white/5 flex items-center justify-between cursor-pointer hover:bg-white/[0.02] transition-colors"
+                  onClick={() => setShowCoverPickerModal(true)}
+                >
+                  <div className="flex items-center gap-2.5 text-xs text-gray-200">
+                    <ImageIcon className="w-4 h-4 text-[#FF8A00]" />
+                    <div>
+                      <span className="font-semibold block text-white">Cover photo</span>
+                      <span className="text-[10px] text-gray-400 block">
+                        {customCoverUrl ? `Selected frame at ${coverFrameTime.toFixed(1)}s` : 'Scrub video frame to select cover'}
+                      </span>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-1.5">
+                    <span className="text-[11px] text-[#00E5FF] font-semibold">Select</span>
+                    <ChevronRight className="w-4 h-4 text-gray-400" />
+                  </div>
+                </div>
+              )}
+
+              {/* Tag People Row (Directly below Caption & Cover) */}
+              <div
+                id="create-modal-tag-people-row"
+                className="p-3.5 border-b border-white/5 flex items-center justify-between cursor-pointer hover:bg-white/[0.02] transition-colors"
+                onClick={() => setShowTagPeopleModal(true)}
+              >
+                <div className="flex items-center gap-2.5 text-xs text-gray-200">
+                  <Users className="w-4 h-4 text-gray-400" />
+                  <span>
+                    {taggedUserIds.length > 0 ? `${taggedUserIds.length} person tagged` : 'Tag people'}
+                  </span>
+                </div>
+                <ChevronRight className="w-4 h-4 text-gray-400" />
+              </div>
+
               {/* Add Location Row */}
-              <div className="border-b border-white/5">
+              <div id="create-modal-location-row" className="border-b border-white/5">
                 <div
                   className="p-3.5 flex items-center justify-between cursor-pointer hover:bg-white/[0.02]"
                   onClick={() => setShowLocationDropdown(!showLocationDropdown)}
@@ -1375,31 +1586,89 @@ export const CreateModal: React.FC = () => {
                 )}
               </div>
 
-              {/* Add Music Row */}
+              {/* Add Music Row (Indian Music Library & JioSaavn public search) */}
               <div
-                className="p-3.5 border-b border-white/5 flex items-center justify-between cursor-pointer hover:bg-white/[0.02]"
-                onClick={() => setShowAudioPicker(true)}
+                id="create-modal-add-music-row"
+                className="p-3.5 border-b border-white/5 flex items-center justify-between cursor-pointer hover:bg-white/[0.02] transition-colors"
+                onClick={() => setIsMusicSelectorOpen(true)}
               >
                 <div className="flex items-center gap-2.5 text-xs text-gray-200 min-w-0 pr-2">
-                  <Music className="w-4 h-4 text-gray-400 shrink-0" />
-                  <span className="truncate">{selectedAudio.title}</span>
+                  {selectedMusicTrack ? (
+                    <div className="flex items-center gap-2.5 min-w-0">
+                      <img
+                        src={selectedMusicTrack.coverUrl}
+                        alt=""
+                        className="w-8 h-8 rounded-lg object-cover border border-white/20 shrink-0"
+                        referrerPolicy="no-referrer"
+                      />
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-1.5">
+                          <Music className="w-3.5 h-3.5 text-[#FF4668] shrink-0" />
+                          <span className="font-bold text-white truncate">
+                            {selectedMusicTrack.title}
+                          </span>
+                        </div>
+                        <span className="text-[10px] text-gray-400 truncate block">
+                          {selectedMusicTrack.artist}
+                        </span>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <Music className="w-4 h-4 text-[#FF4668] shrink-0" />
+                      <div className="min-w-0">
+                        <span className="font-semibold text-white block">Add Music / Sound</span>
+                        <span className="text-[10px] text-gray-400 block truncate">
+                          Bhojpuri, Hindi, Punjabi & JioSaavn search
+                        </span>
+                      </div>
+                    </>
+                  )}
                 </div>
-                <span className="text-[11px] text-[#0095F6] font-semibold shrink-0">Change</span>
-              </div>
-
-              {/* Tag People Row */}
-              <div
-                className="p-3.5 border-b border-white/5 flex items-center justify-between cursor-pointer hover:bg-white/[0.02]"
-                onClick={() => setShowTagPeopleModal(true)}
-              >
-                <div className="flex items-center gap-2.5 text-xs text-gray-200">
-                  <Users className="w-4 h-4 text-gray-400" />
-                  <span>
-                    {taggedUserIds.length > 0 ? `${taggedUserIds.length} person tagged` : 'Tag people'}
+                <div className="flex items-center gap-2 shrink-0">
+                  {selectedMusicTrack && (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setSelectedMusicTrack(null);
+                      }}
+                      className="p-1 rounded-full text-gray-400 hover:text-white"
+                      title="Remove music"
+                    >
+                      <X className="w-3.5 h-3.5" />
+                    </button>
+                  )}
+                  <span className="text-[11px] text-[#00E5FF] font-semibold">
+                    {selectedMusicTrack ? 'Change' : 'Select'}
                   </span>
                 </div>
-                <ChevronRight className="w-4 h-4 text-gray-400" />
               </div>
+
+              {/* Instagram Style Music Trimmer & Volume Mixer (when music track selected) */}
+              {selectedMusicTrack && (
+                <div className="p-3.5 border-b border-white/5 bg-black/25">
+                  <MusicTrimmerMixer
+                    track={selectedMusicTrack}
+                    audioStartTime={trimStart}
+                    onChangeStartTime={setTrimStart}
+                    clipDuration={clipDuration}
+                    onChangeClipDuration={setClipDuration}
+                    originalVolume={originalAudioVolume}
+                    onChangeOriginalVolume={(v) => {
+                      setOriginalAudioVolume(v);
+                      if (videoRef.current) {
+                        videoRef.current.volume = v / 100;
+                      }
+                    }}
+                    musicVolume={musicVolume}
+                    onChangeMusicVolume={setMusicVolume}
+                    hasOriginalAudio={mediaType === 'video'}
+                    onChangeTrack={() => setIsMusicSelectorOpen(true)}
+                    onRemoveTrack={() => setSelectedMusicTrack(null)}
+                  />
+                </div>
+              )}
 
               {/* AI Info Disclosure Toggle (Instagram official requirement) */}
               <div className="p-3.5 border-b border-white/5 flex items-center justify-between bg-cyan-500/[0.03]">
@@ -1580,6 +1849,27 @@ export const CreateModal: React.FC = () => {
         onCancel={() => setShowDiscardModal(false)}
       />
 
+      {/* Indian Music Library Selector Modal (Bhojpuri, Hindi, Punjabi & JioSaavn search) */}
+      <MusicSelectorModal
+        isOpen={isMusicSelectorOpen}
+        onClose={() => setIsMusicSelectorOpen(false)}
+        onSelectMusic={(track) => {
+          setSelectedMusicTrack(track);
+          if (track) {
+            setSelectedAudio({
+              title: track.title,
+              artist: track.artist,
+              isCommercial: true,
+              rightsHolder: track.album || track.artist,
+            });
+            showToast(`🎵 Attached: ${track.title} (${track.artist})`);
+          } else {
+            showToast('Sound removed');
+          }
+        }}
+        currentSelectedMusic={selectedMusicTrack}
+      />
+
       {/* Instagram Audio Picker Sheet */}
       <AudioPickerModal
         isOpen={showAudioPicker}
@@ -1717,6 +2007,106 @@ export const CreateModal: React.FC = () => {
             >
               Done Tagging ({taggedUserIds.length})
             </button>
+          </div>
+        </div>
+      )}
+
+      {/* Cover / Thumbnail Scrubber Modal (Exact Instagram Style) */}
+      {showCoverPickerModal && mediaType === 'video' && (
+        <div
+          id="instagram-cover-picker-dialog"
+          className="fixed inset-0 z-[140] bg-black/90 backdrop-blur-md flex items-center justify-center p-4 animate-fade-in"
+          onClick={() => setShowCoverPickerModal(false)}
+        >
+          <div
+            className="w-full max-w-md bg-[#161a26] text-white rounded-3xl p-5 border border-white/15 shadow-2xl space-y-4 animate-scale-up"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-center justify-between pb-3 border-b border-white/10">
+              <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                <ImageIcon className="w-4 h-4 text-[#FF8A00]" />
+                <span>Select Cover Frame</span>
+              </h3>
+              <button
+                type="button"
+                onClick={() => {
+                  captureFrameAsCover(coverFrameTime);
+                  setShowCoverPickerModal(false);
+                }}
+                className="px-4 py-1.5 rounded-full bg-[#0095F6] hover:bg-[#0081d6] text-white text-xs font-bold transition-all shadow-md active:scale-95"
+              >
+                Done
+              </button>
+            </div>
+
+            {/* Frame Preview Canvas / Video */}
+            <div className="relative aspect-square max-h-64 mx-auto rounded-2xl overflow-hidden bg-black border border-white/20 flex items-center justify-center shadow-inner">
+              <video
+                src={mediaUrl}
+                playsInline
+                muted
+                className="w-full h-full object-cover"
+                onLoadedMetadata={(e) => {
+                  const v = e.currentTarget;
+                  v.currentTime = coverFrameTime;
+                }}
+              />
+              <div className="absolute top-2 right-2 px-2.5 py-0.5 rounded-full bg-black/75 backdrop-blur-md text-[10px] font-mono text-white border border-white/20">
+                {coverFrameTime.toFixed(1)}s / {(videoDuration || 15).toFixed(0)}s
+              </div>
+            </div>
+
+            {/* Video Scrubber Slider */}
+            <div className="space-y-2">
+              <div className="flex justify-between text-xs text-gray-300 font-semibold">
+                <span>Drag scrubber to choose frame</span>
+                <span className="font-mono text-[#00E5FF]">{coverFrameTime.toFixed(1)}s</span>
+              </div>
+              <input
+                id="instagram-cover-scrubber-slider"
+                type="range"
+                min={0}
+                max={videoDuration || 15}
+                step={0.1}
+                value={coverFrameTime}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
+                  setCoverFrameTime(val);
+                  if (videoRef.current) {
+                    videoRef.current.currentTime = val;
+                  }
+                }}
+                className="w-full accent-[#0095F6] h-2 bg-white/20 rounded-full cursor-pointer"
+              />
+              <p className="text-[11px] text-gray-400">
+                The chosen frame will be the primary cover displayed on your profile grid and in feed previews.
+              </p>
+            </div>
+
+            {/* Quick Presets & Set Frame Action */}
+            <div className="pt-2 flex items-center justify-between border-t border-white/10">
+              <button
+                type="button"
+                onClick={() => {
+                  setCustomCoverUrl('https://images.unsplash.com/photo-1599661046289-e31897846e41?w=800&auto=format&fit=crop&q=80');
+                  showToast('Selected high-res cover poster! 🎨');
+                  setShowCoverPickerModal(false);
+                }}
+                className="text-xs text-[#00E5FF] hover:underline font-semibold"
+              >
+                Use poster preset
+              </button>
+              <button
+                type="button"
+                onClick={() => {
+                  captureFrameAsCover(coverFrameTime);
+                  setShowCoverPickerModal(false);
+                }}
+                className="px-4 py-2 rounded-xl bg-white/10 hover:bg-white/20 text-white text-xs font-bold transition-all"
+              >
+                Set This Frame
+              </button>
+            </div>
           </div>
         </div>
       )}

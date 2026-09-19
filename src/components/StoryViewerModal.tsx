@@ -12,6 +12,7 @@ import {
   Sparkles,
   Volume2,
   VolumeX,
+  Music,
 } from 'lucide-react';
 
 export const StoryViewerModal: React.FC = () => {
@@ -31,8 +32,18 @@ export const StoryViewerModal: React.FC = () => {
   const [replyText, setReplyText] = useState('');
   const [isLiked, setIsLiked] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const musicAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const currentStory = activeStoryGroup?.stories?.[activeStoryIndex];
+
+  // Stop custom story music when closing or switching
+  const stopStoryMusic = () => {
+    if (musicAudioRef.current) {
+      musicAudioRef.current.pause();
+      musicAudioRef.current.src = '';
+      musicAudioRef.current = null;
+    }
+  };
 
   // Reset progress, state, and media whenever active story changes
   useEffect(() => {
@@ -40,41 +51,95 @@ export const StoryViewerModal: React.FC = () => {
     setIsLiked(false);
     setReplyText('');
     setIsPaused(false);
+    stopStoryMusic();
 
     if (videoRef.current) {
       videoRef.current.currentTime = 0;
       videoRef.current.muted = isMuted;
+      const origVol = ((currentStory?.originalVolume ?? currentStory?.music?.originalVolume ?? 100) / 100);
+      videoRef.current.volume = Math.max(0, Math.min(1, origVol));
       videoRef.current.play().catch(() => {});
     }
 
-    // Story ambient soundtrack if unmuted
+    // Play attached Indian Music track if available, else ambient soundtrack
     if (!isMuted) {
-      soundManager.playSoundtrack(currentStory?.caption || 'Story Soundtrack', 'ambient');
-      soundManager.setMuted(false);
+      if (currentStory?.music?.audioUrl) {
+        try {
+          const audio = new Audio();
+          audio.crossOrigin = 'anonymous';
+          (audio as any).playsInline = true;
+          audio.setAttribute('playsinline', 'true');
+          audio.preload = 'auto';
+          audio.src = currentStory.music.audioUrl;
+          const musicVol = ((currentStory.music.musicVolume ?? currentStory.musicVolume ?? 85) / 100);
+          audio.volume = Math.max(0, Math.min(1, musicVol));
+          const startSec = currentStory.music.audioStartTime ?? currentStory.audioStartTime ?? 0;
+          const clipDur = currentStory.music.clipDuration ?? currentStory.clipDuration ?? 15;
+          audio.currentTime = startSec;
+
+          audio.onerror = () => {
+            // If direct CDN blocks, try proxied or ambient fallback
+            if (currentStory?.music?.audioUrl && !audio.src.includes('allorigins')) {
+              audio.src = `https://api.allorigins.win/raw?url=${encodeURIComponent(currentStory.music.audioUrl)}`;
+              audio.play().catch(() => {});
+            } else {
+              soundManager.playSoundtrack(currentStory?.caption || 'Story Soundtrack', 'ambient');
+            }
+          };
+
+          audio.ontimeupdate = () => {
+            if (clipDur > 0 && audio.currentTime >= startSec + clipDur) {
+              audio.currentTime = startSec;
+            }
+          };
+
+          audio.play().catch(() => {});
+          musicAudioRef.current = audio;
+        } catch (e) {
+          // fallback to ambient
+          soundManager.playSoundtrack(currentStory?.caption || 'Story Soundtrack', 'ambient');
+          soundManager.setMuted(false);
+        }
+      } else {
+        soundManager.playSoundtrack(currentStory?.caption || 'Story Soundtrack', 'ambient');
+        soundManager.setMuted(false);
+      }
     }
-  }, [activeStoryGroup?.userId, activeStoryIndex, isMuted, currentStory?.caption]);
+  }, [activeStoryGroup?.userId, activeStoryIndex, isMuted, currentStory]);
 
   // Clean up sound on unmount or close
   useEffect(() => {
     return () => {
+      stopStoryMusic();
       soundManager.stopSoundtrack();
     };
   }, []);
 
-  // Sync mute state to video DOM element and soundManager
+  // Sync mute state to video DOM element, custom music audio and soundManager
   useEffect(() => {
     const video = videoRef.current;
     if (video) {
       video.muted = isMuted;
       if (!isMuted) {
-        video.volume = 1.0;
+        const origVol = ((currentStory?.originalVolume ?? currentStory?.music?.originalVolume ?? 100) / 100);
+        video.volume = Math.max(0, Math.min(1, origVol));
         if (!isPaused && video.paused) {
           video.play().catch(() => {});
         }
       }
     }
+
+    if (musicAudioRef.current) {
+      musicAudioRef.current.muted = isMuted;
+      if (!isMuted && !isPaused && musicAudioRef.current.paused) {
+        const musicVol = ((currentStory?.music?.musicVolume ?? currentStory?.musicVolume ?? 85) / 100);
+        musicAudioRef.current.volume = Math.max(0, Math.min(1, musicVol));
+        musicAudioRef.current.play().catch(() => {});
+      }
+    }
+
     soundManager.setMuted(isMuted);
-  }, [isMuted, isPaused]);
+  }, [isMuted, isPaused, currentStory]);
 
   // Sync pause state with video element and sound
   useEffect(() => {
@@ -82,13 +147,23 @@ export const StoryViewerModal: React.FC = () => {
     if (video) {
       if (isPaused) {
         video.pause();
-        soundManager.setMuted(true);
       } else {
         video.play().catch(() => {});
-        if (!isMuted) {
-          soundManager.setMuted(false);
-        }
       }
+    }
+
+    if (musicAudioRef.current) {
+      if (isPaused) {
+        musicAudioRef.current.pause();
+      } else if (!isMuted) {
+        musicAudioRef.current.play().catch(() => {});
+      }
+    }
+
+    if (isPaused) {
+      soundManager.setMuted(true);
+    } else if (!isMuted) {
+      soundManager.setMuted(false);
     }
   }, [isPaused, isMuted]);
 
@@ -139,7 +214,6 @@ export const StoryViewerModal: React.FC = () => {
     e.stopPropagation();
     const nextMuted = !isMuted;
     setIsMuted(nextMuted);
-    showToast(nextMuted ? 'Story Sound Off 🔇' : 'Story Sound On 🔊');
   };
 
   const handleSendReply = (e: React.FormEvent) => {
@@ -293,7 +367,7 @@ export const StoryViewerModal: React.FC = () => {
               </div>
             </div>
 
-            {/* Controls: Audio Mute, Pause/Play & Close */}
+            {/* Controls: Audio Mute & Close (Exact Instagram Stories style) */}
             <div className="flex items-center gap-2 shrink-0">
               <button
                 id="story-mute-toggle"
@@ -308,14 +382,6 @@ export const StoryViewerModal: React.FC = () => {
                 {isMuted ? <VolumeX className="w-4 h-4" /> : <Volume2 className="w-4 h-4 animate-pulse" />}
               </button>
               <button
-                id="story-play-pause-toggle"
-                onClick={() => setIsPaused(!isPaused)}
-                className="p-1.5 rounded-full bg-black/40 text-white hover:bg-black/60 backdrop-blur-md border border-white/10 transition-all"
-                title={isPaused ? 'Play' : 'Pause'}
-              >
-                {isPaused ? <Play className="w-4 h-4 fill-white" /> : <Pause className="w-4 h-4" />}
-              </button>
-              <button
                 id="story-close-btn"
                 onClick={closeStoryViewer}
                 className="p-1.5 rounded-full bg-black/40 text-white hover:bg-black/60 backdrop-blur-md border border-white/10 transition-all"
@@ -325,6 +391,26 @@ export const StoryViewerModal: React.FC = () => {
               </button>
             </div>
           </div>
+
+          {/* Instagram Music Sticker (if story has music attached) */}
+          {currentStory.music && (
+            <div className="mt-2.5 flex items-center gap-2 self-start px-3 py-1.5 rounded-full bg-black/65 backdrop-blur-md border border-white/20 text-white shadow-xl select-none animate-fade-in max-w-[280px]">
+              <div className="w-5 h-5 rounded-full overflow-hidden shrink-0 border border-white/30">
+                <img
+                  src={currentStory.music.coverUrl}
+                  alt=""
+                  className="w-full h-full object-cover"
+                  referrerPolicy="no-referrer"
+                />
+              </div>
+              <div className="flex items-center gap-1.5 text-[11px] font-semibold truncate">
+                <Music className="w-3 h-3 text-[#00E5FF] shrink-0 animate-pulse" />
+                <span className="truncate">
+                  {currentStory.music.title} • {currentStory.music.artist}
+                </span>
+              </div>
+            </div>
+          )}
         </div>
 
         {/* Story Caption (if any) */}

@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
-import { Post } from '../types';
+import { Post, MusicTrack } from '../types';
 import { useApp } from '../context/AppContext';
 import { formatViewCount, formatLikesCount } from '../data/mockData';
 import { soundManager } from '../utils/audioEngine';
@@ -25,6 +25,7 @@ import {
   RotateCw,
   Trash2,
   AlertTriangle,
+  Music,
 } from 'lucide-react';
 
 interface PostCardProps {
@@ -60,6 +61,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
     currentUser,
     openCopyrightModal,
     runContentIdAudit,
+    openAudioTrackModal,
   } = useApp();
 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
@@ -74,6 +76,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
   const [soundFeedback, setSoundFeedback] = useState<'unmuted' | 'muted' | null>(null);
   const articleRef = useRef<HTMLElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
+  const musicAudioRef = useRef<HTMLAudioElement | null>(null);
   const hasViewCountedRef = useRef(false);
   const lastTapRef = useRef<number>(0);
   const singleTapTimerRef = useRef<number | null>(null);
@@ -83,14 +86,39 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
     post.thumbnailUrl ||
     'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=1080&auto=format&fit=crop&q=80';
 
+  // Music playback bounds (start time & clip duration looping)
+  const handleMusicTimeUpdate = () => {
+    const musicAudio = musicAudioRef.current;
+    if (!musicAudio) return;
+    const startSec = post.audioStartTime ?? post.music?.audioStartTime ?? 0;
+    const clipDur = post.clipDuration ?? post.music?.clipDuration ?? 15;
+    if (clipDur > 0 && musicAudio.currentTime >= startSec + clipDur) {
+      musicAudio.currentTime = startSec;
+    }
+  };
+
+  const handleMusicLoaded = () => {
+    const musicAudio = musicAudioRef.current;
+    if (!musicAudio) return;
+    const startSec = post.audioStartTime ?? post.music?.audioStartTime ?? 0;
+    musicAudio.currentTime = startSec;
+  };
+
   // Sync DOM muted property directly whenever isMuted changes
   useEffect(() => {
     const video = videoRef.current;
+    const musicAudio = musicAudioRef.current;
+
+    const origVol = ((post.originalVolume ?? post.music?.originalVolume ?? 100) / 100);
+    const musVol = ((post.musicVolume ?? post.music?.musicVolume ?? 85) / 100);
+    const startSec = post.audioStartTime ?? post.music?.audioStartTime ?? 0;
+    const clipDur = post.clipDuration ?? post.music?.clipDuration ?? 15;
+
     if (video) {
       video.muted = isMuted;
       if (!isMuted) {
-        video.volume = 1.0;
-        if (isPlaying) {
+        video.volume = Math.max(0, Math.min(1, origVol));
+        if (isPlaying && !post.music?.audioUrl) {
           soundManager.playSoundtrack(post.caption, 'ambient');
           soundManager.setMuted(false);
         }
@@ -98,12 +126,28 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
         soundManager.setMuted(true);
       }
     }
-  }, [isMuted, isPlaying, post.caption]);
+
+    if (musicAudio) {
+      musicAudio.muted = isMuted;
+      if (!isMuted && isPlaying) {
+        musicAudio.volume = Math.max(0, Math.min(1, musVol));
+        if (musicAudio.currentTime < startSec || (clipDur > 0 && musicAudio.currentTime >= startSec + clipDur)) {
+          musicAudio.currentTime = startSec;
+        }
+        musicAudio.play().catch(() => {});
+      } else {
+        musicAudio.pause();
+      }
+    }
+  }, [isMuted, isPlaying, post.caption, post.music?.audioUrl, post.originalVolume, post.musicVolume, post.audioStartTime, post.clipDuration]);
 
   // Clean up sound on unmount
   useEffect(() => {
     return () => {
       soundManager.stopSoundtrack();
+      if (musicAudioRef.current) {
+        musicAudioRef.current.pause();
+      }
       if (singleTapTimerRef.current) {
         window.clearTimeout(singleTapTimerRef.current);
       }
@@ -113,9 +157,10 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
     };
   }, []);
 
-  // IntersectionObserver: auto-play muted in viewport, pause when scrolled away
+  // IntersectionObserver: auto-play in viewport, pause when scrolled away
   useEffect(() => {
-    if (post.mediaType !== 'video') return;
+    const hasMediaToPlay = post.mediaType === 'video' || Boolean(post.music?.audioUrl);
+    if (!hasMediaToPlay) return;
     const element = articleRef.current;
     if (!element) return;
 
@@ -123,25 +168,28 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
       (entries) => {
         entries.forEach((entry) => {
           const video = videoRef.current;
-          if (!video) return;
+          const musicAudio = musicAudioRef.current;
 
           if (entry.isIntersecting && entry.intersectionRatio >= 0.4) {
-            // Autoplay in muted state (browser autoplay compliance)
-            video.muted = isMuted;
-            const promise = video.play();
-            if (promise !== undefined) {
-              promise
-                .then(() => setIsPlaying(true))
-                .catch(() => {
-                  // Guaranteed muted autoplay fallback
+            setIsPlaying(true);
+            if (video) {
+              video.muted = isMuted;
+              const promise = video.play();
+              if (promise !== undefined) {
+                promise.catch(() => {
                   video.muted = true;
                   setIsMuted(true);
-                  video.play().then(() => setIsPlaying(true)).catch(() => {});
+                  video.play().catch(() => {});
                 });
+              }
+            }
+            if (musicAudio && !isMuted) {
+              musicAudio.play().catch(() => {});
             }
           } else {
-            video.pause();
             setIsPlaying(false);
+            if (video) video.pause();
+            if (musicAudio) musicAudio.pause();
             soundManager.stopSoundtrack();
           }
         });
@@ -151,7 +199,7 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
 
     observer.observe(element);
     return () => observer.disconnect();
-  }, [post.mediaType, isMuted]);
+  }, [post.mediaType, post.music?.audioUrl, isMuted]);
 
   const toggleVideoPlay = (e?: React.MouseEvent) => {
     e?.stopPropagation();
@@ -184,13 +232,20 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
   const handleToggleMute = (e?: React.MouseEvent) => {
     e?.stopPropagation();
     const video = videoRef.current;
-    if (!video) return;
+    const musicAudio = musicAudioRef.current;
+    if (!video && !musicAudio) return;
 
     // Strict Copyright enforcement: If commercial audio was flagged, force muted state
     if (post.copyrightClaim?.isAudioMuted) {
       setIsMuted(true);
-      video.muted = true;
-      video.volume = 0;
+      if (video) {
+        video.muted = true;
+        video.volume = 0;
+      }
+      if (musicAudio) {
+        musicAudio.muted = true;
+        musicAudio.pause();
+      }
       setSoundFeedback('muted');
       showToast('Audio muted due to copyright claim. Tap details to review match or replace audio.');
       if (soundFeedbackTimerRef.current) {
@@ -204,13 +259,34 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
 
     const nextMuted = !isMuted;
     setIsMuted(nextMuted);
-    video.muted = nextMuted;
+
+    if (video) {
+      video.muted = nextMuted;
+      if (!nextMuted) {
+        const origVol = ((post.originalVolume ?? post.music?.originalVolume ?? 100) / 100);
+        video.volume = Math.max(0, Math.min(1, origVol));
+        if (video.paused) {
+          video.play().then(() => setIsPlaying(true)).catch(() => {});
+        }
+      }
+    }
+
+    if (musicAudio) {
+      musicAudio.muted = nextMuted;
+      if (!nextMuted) {
+        const musVol = ((post.musicVolume ?? post.music?.musicVolume ?? 85) / 100);
+        const startSec = post.audioStartTime ?? post.music?.audioStartTime ?? 0;
+        musicAudio.volume = Math.max(0, Math.min(1, musVol));
+        if (musicAudio.currentTime < startSec) {
+          musicAudio.currentTime = startSec;
+        }
+        musicAudio.play().then(() => setIsPlaying(true)).catch(() => {});
+      } else {
+        musicAudio.pause();
+      }
+    }
 
     if (!nextMuted) {
-      video.volume = 1.0;
-      if (video.paused) {
-        video.play().then(() => setIsPlaying(true)).catch(() => {});
-      }
       setSoundFeedback('unmuted');
       showToast('Sound On 🔊');
     } else {
@@ -338,6 +414,35 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
                 </>
               )}
             </div>
+            {(post.music || post.musicTitle) && (
+              <div
+                id={`post-music-ticker-${post.id}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const trackToOpen: MusicTrack = post.music || {
+                    id: `track_post_${post.id}`,
+                    title: post.musicTitle || 'Original Audio',
+                    artist: post.musicArtist || post.user.name,
+                    album: 'LOKSY Music',
+                    audioUrl: post.music?.audioUrl || '',
+                    coverUrl: post.thumbnailUrl || post.mediaUrl,
+                    duration: 30,
+                    category: 'Trending',
+                  };
+                  openAudioTrackModal(trackToOpen);
+                }}
+                className="flex items-center gap-1.5 text-xs text-[#00E5FF] hover:underline cursor-pointer font-medium truncate mt-0.5 group"
+                title="Tap to view audio page and use this track"
+              >
+                <Music className="w-3 h-3 text-[#00E5FF] shrink-0 group-hover:scale-110 transition-transform animate-pulse" />
+                <span className="truncate">
+                  {post.music?.title || post.musicTitle} • {post.music?.artist || post.musicArtist}
+                </span>
+                <span className="text-[9px] px-1.5 py-0.5 rounded-full bg-white/10 text-gray-300 font-normal shrink-0 border border-white/10">
+                  Original Audio
+                </span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -658,17 +763,88 @@ export const PostCard: React.FC<PostCardProps> = ({ post }) => {
                     </>
                   )}
                 </button>
+                {post.music?.audioUrl && (
+                  <audio
+                    ref={musicAudioRef}
+                    src={post.music.audioUrl}
+                    loop
+                    preload="auto"
+                    crossOrigin="anonymous"
+                    playsInline
+                    onTimeUpdate={handleMusicTimeUpdate}
+                    onLoadedMetadata={handleMusicLoaded}
+                    onError={(e) => {
+                      const target = e.currentTarget;
+                      if (post.music?.audioUrl && !target.src.includes('allorigins')) {
+                        target.src = `https://api.allorigins.win/raw?url=${encodeURIComponent(post.music.audioUrl)}`;
+                        target.load();
+                        target.play().catch(() => {});
+                      }
+                    }}
+                  />
+                )}
               </>
             )}
           </div>
         ) : (
-          <img
-            src={post.mediaUrl}
-            alt={post.caption}
-            className="w-full h-auto object-cover max-h-[580px]"
-            referrerPolicy="no-referrer"
-            loading="lazy"
-          />
+          <div className="relative w-full h-auto max-h-[580px] bg-black flex items-center justify-center overflow-hidden">
+            <img
+              src={post.mediaUrl}
+              alt={post.caption}
+              className="w-full h-auto object-cover max-h-[580px]"
+              referrerPolicy="no-referrer"
+              loading="lazy"
+            />
+            {post.music?.audioUrl && (
+              <>
+                <audio
+                  ref={musicAudioRef}
+                  src={post.music.audioUrl}
+                  loop
+                  preload="auto"
+                  crossOrigin="anonymous"
+                  playsInline
+                  onTimeUpdate={handleMusicTimeUpdate}
+                  onLoadedMetadata={handleMusicLoaded}
+                  onError={(e) => {
+                    const target = e.currentTarget;
+                    if (post.music?.audioUrl && !target.src.includes('allorigins')) {
+                      target.src = `https://api.allorigins.win/raw?url=${encodeURIComponent(post.music.audioUrl)}`;
+                      target.load();
+                      target.play().catch(() => {});
+                    }
+                  }}
+                />
+                <button
+                  id={`post-photo-mute-btn-${post.id}`}
+                  onClick={handleToggleMute}
+                  className={`absolute bottom-3 right-3 flex items-center gap-1.5 px-3 py-1.5 rounded-full backdrop-blur-md transition-all z-20 border select-none ${
+                    isMuted
+                      ? 'bg-black/70 hover:bg-black/90 text-white border-white/15'
+                      : 'bg-black/85 text-[#00E5FF] border-[#00E5FF]/40 shadow-lg shadow-[#00E5FF]/20'
+                  }`}
+                  title={isMuted ? 'Turn Sound On' : 'Turn Sound Off'}
+                >
+                  {isMuted ? (
+                    <>
+                      <VolumeX className="w-4 h-4 text-[#FF4668]" />
+                      <span className="text-[11px] font-medium text-gray-300">Sound Off</span>
+                    </>
+                  ) : (
+                    <>
+                      <Volume2 className="w-4 h-4 text-[#00E5FF] animate-pulse" />
+                      <span className="text-[11px] font-bold text-[#00E5FF]">Sound On</span>
+                      <div className="flex items-end gap-0.5 h-2.5 ml-0.5">
+                        <span className="w-0.5 h-2.5 bg-[#00E5FF] rounded-full animate-pulse" />
+                        <span className="w-0.5 h-1.5 bg-[#00E5FF] rounded-full animate-pulse delay-75" />
+                        <span className="w-0.5 h-2 bg-[#00E5FF] rounded-full animate-pulse delay-150" />
+                      </div>
+                    </>
+                  )}
+                </button>
+              </>
+            )}
+          </div>
         )}
 
         {/* Double-tap animated heart burst */}

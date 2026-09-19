@@ -35,6 +35,21 @@ export interface Comment {
   isLiked?: boolean;
 }
 
+export interface MusicTrack {
+  id: string;
+  title: string;
+  artist: string;
+  album?: string;
+  coverUrl: string;
+  audioUrl: string;
+  duration?: number;
+  genre?: string;
+  audioStartTime?: number; // In seconds (e.g. 15.0)
+  clipDuration?: number;   // 15 or 30 seconds
+  originalVolume?: number; // 0 - 100%
+  musicVolume?: number;    // 0 - 100%
+}
+
 export interface Post {
   id: string;
   userId: string;
@@ -62,6 +77,14 @@ export interface Post {
   aspectRatio?: 'square' | 'portrait' | 'landscape';
   isAiGenerated?: boolean;
   copyrightClaim?: CopyrightClaim;
+  music?: MusicTrack;
+  musicTitle?: string;
+  musicArtist?: string;
+  musicCover?: string;
+  audioStartTime?: number;
+  clipDuration?: number;
+  originalVolume?: number;
+  musicVolume?: number;
 }
 
 export interface StoryItem {
@@ -73,6 +96,11 @@ export interface StoryItem {
   caption?: string;
   createdAt: string;
   duration?: number; // in seconds
+  music?: MusicTrack;
+  audioStartTime?: number;
+  clipDuration?: number;
+  originalVolume?: number;
+  musicVolume?: number;
 }
 
 export interface StoryGroup {
@@ -128,6 +156,11 @@ export interface Reel {
   musicTitle: string;
   musicArtist: string;
   musicCover?: string;
+  music?: MusicTrack;
+  audioStartTime?: number;
+  clipDuration?: number;
+  originalVolume?: number;
+  musicVolume?: number;
   likesCount: number;
   commentsCount: number;
   sharesCount: number;

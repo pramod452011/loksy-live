@@ -15,6 +15,7 @@ import {
   CopyrightDetailsModal,
   CopyrightGuidelinesModal,
 } from './components/CopyrightDetailsModal';
+import { AudioTrackModal } from './components/AudioTrackModal';
 
 // Screens
 import { LandingScreen } from './screens/LandingScreen';
@@ -42,6 +43,9 @@ const MainLayout: React.FC = () => {
     isGuidelinesModalOpen,
     openGuidelinesModal,
     closeGuidelinesModal,
+    audioTrackModalTrack,
+    closeAudioTrackModal,
+    openCreateModal,
   } = useApp();
 
   // Gated Initial Screen: If no user session is active, the app must default directly to the Sign Up screen (with a toggle to Log In). No public feed access before authentication.
@@ -129,6 +133,16 @@ const MainLayout: React.FC = () => {
         isOpen={isGuidelinesModalOpen}
         onClose={closeGuidelinesModal}
       />
+      {audioTrackModalTrack && (
+        <AudioTrackModal
+          track={audioTrackModalTrack}
+          onClose={closeAudioTrackModal}
+          onUseAudio={(track) => {
+            closeAudioTrackModal();
+            openCreateModal('reel', track);
+          }}
+        />
+      )}
 
       {/* Global Interactive Toast Alert */}
       {toastMessage && (

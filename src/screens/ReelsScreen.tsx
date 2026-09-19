@@ -1,4 +1,5 @@
 import React, { useState, useRef, useEffect, useCallback } from 'react';
+import { MusicTrack } from '../types';
 import { useApp } from '../context/AppContext';
 import { formatViewCount } from '../data/mockData';
 import { soundManager } from '../utils/audioEngine';
@@ -49,9 +50,11 @@ const ReelCard: React.FC<ReelCardProps> = ({
     openShareModal,
     showToast,
     openCopyrightModal,
+    openAudioTrackModal,
   } = useApp();
 
   const videoRef = useRef<HTMLVideoElement | null>(null);
+  const musicAudioRef = useRef<HTMLAudioElement | null>(null);
   const [isPlaying, setIsPlaying] = useState(true);
   const [showHeartAnimation, setShowHeartAnimation] = useState(false);
   const [heartAnimKey, setHeartAnimKey] = useState<number>(0);
@@ -62,6 +65,24 @@ const ReelCard: React.FC<ReelCardProps> = ({
   const [progress, setProgress] = useState(0);
   const hasIncrementedViewRef = useRef(false);
 
+  // Music loop & seek boundaries
+  const handleMusicTimeUpdate = () => {
+    const musicAudio = musicAudioRef.current;
+    if (!musicAudio) return;
+    const startSec = reel.audioStartTime ?? reel.music?.audioStartTime ?? 0;
+    const clipDur = reel.clipDuration ?? reel.music?.clipDuration ?? 15;
+    if (clipDur > 0 && musicAudio.currentTime >= startSec + clipDur) {
+      musicAudio.currentTime = startSec;
+    }
+  };
+
+  const handleMusicLoaded = () => {
+    const musicAudio = musicAudioRef.current;
+    if (!musicAudio) return;
+    const startSec = reel.audioStartTime ?? reel.music?.audioStartTime ?? 0;
+    musicAudio.currentTime = startSec;
+  };
+
   // Check if creator is followed
   const creator = users.find(u => u.id === reel.userId);
   const isFollowingCreator = creator?.isFollowing ?? false;
@@ -71,6 +92,9 @@ const ReelCard: React.FC<ReelCardProps> = ({
     return () => {
       if (singleTapTimeoutRef.current) {
         clearTimeout(singleTapTimeoutRef.current);
+      }
+      if (musicAudioRef.current) {
+        musicAudioRef.current.pause();
       }
       soundManager.stopSoundtrack();
     };
@@ -97,25 +121,41 @@ const ReelCard: React.FC<ReelCardProps> = ({
   // Handle play / pause and sound state when card becomes active or mute toggles
   useEffect(() => {
     const video = videoRef.current;
+    const musicAudio = musicAudioRef.current;
     if (!video) return;
 
     if (isActive) {
       setHasVideoError(false);
       video.currentTime = 0;
       video.muted = isMuted;
-      if (!isMuted) {
-        video.volume = 1.0;
-        soundManager.playSoundtrack(reel.musicTitle || 'LOKSY Reel Groove', 'dance');
-        soundManager.setMuted(false);
+
+      if (!isMuted && !reel.copyrightClaim?.isAudioMuted) {
+        const origVol = ((reel.originalVolume ?? reel.music?.originalVolume ?? 100) / 100);
+        const musVol = ((reel.musicVolume ?? reel.music?.musicVolume ?? 85) / 100);
+        const startSec = reel.audioStartTime ?? reel.music?.audioStartTime ?? 0;
+        video.volume = Math.max(0, Math.min(1, origVol));
+        if (musicAudio) {
+          musicAudio.currentTime = startSec;
+          musicAudio.muted = false;
+          musicAudio.volume = Math.max(0, Math.min(1, musVol));
+          musicAudio.play().catch(() => {});
+        } else {
+          soundManager.playSoundtrack(reel.musicTitle || 'LOKSY Reel Groove', 'dance');
+          soundManager.setMuted(false);
+        }
       } else {
+        if (musicAudio) {
+          musicAudio.muted = true;
+          musicAudio.pause();
+        }
         soundManager.setMuted(true);
       }
+
       const playPromise = video.play();
       if (playPromise !== undefined) {
         playPromise
           .then(() => setIsPlaying(true))
           .catch((err) => {
-            // Autoplay with audio might be blocked by browser policy without prior interaction; fallback to muted
             console.warn('Playback with audio blocked by browser policy, retrying muted:', err);
             video.muted = true;
             video.play()
@@ -125,38 +165,61 @@ const ReelCard: React.FC<ReelCardProps> = ({
       }
     } else {
       video.pause();
+      if (musicAudio) {
+        musicAudio.pause();
+      }
       setIsPlaying(false);
       setProgress(0);
       soundManager.stopSoundtrack();
     }
-  }, [isActive, isMuted, reel.musicTitle]);
+  }, [isActive, isMuted, reel.musicTitle, reel.music?.audioUrl, reel.copyrightClaim?.isAudioMuted]);
 
   // Sync mute state and volume directly to video element whenever isMuted changes
   useEffect(() => {
     const video = videoRef.current;
+    const musicAudio = musicAudioRef.current;
+
     if (video) {
       if (reel.copyrightClaim?.isAudioMuted) {
         video.muted = true;
         video.volume = 0;
+        if (musicAudio) {
+          musicAudio.muted = true;
+          musicAudio.pause();
+        }
         soundManager.setMuted(true);
         return;
       }
 
       video.muted = isMuted;
+      if (musicAudio) {
+        musicAudio.muted = isMuted;
+      }
+
       if (!isMuted) {
-        video.volume = 1.0;
+        const origVol = ((reel.originalVolume ?? reel.music?.originalVolume ?? 100) / 100);
+        video.volume = Math.max(0, Math.min(1, origVol));
         if (isActive) {
-          soundManager.playSoundtrack(reel.musicTitle || 'LOKSY Reel Groove', 'dance');
-          soundManager.setMuted(false);
+          if (musicAudio) {
+            const musVol = ((reel.musicVolume ?? reel.music?.musicVolume ?? 85) / 100);
+            musicAudio.volume = Math.max(0, Math.min(1, musVol));
+            musicAudio.play().catch(() => {});
+          } else {
+            soundManager.playSoundtrack(reel.musicTitle || 'LOKSY Reel Groove', 'dance');
+            soundManager.setMuted(false);
+          }
           if (video.paused) {
             video.play().then(() => setIsPlaying(true)).catch(() => {});
           }
         }
       } else {
+        if (musicAudio) {
+          musicAudio.pause();
+        }
         soundManager.setMuted(true);
       }
     }
-  }, [isMuted, isActive, reel.musicTitle, reel.copyrightClaim?.isAudioMuted]);
+  }, [isMuted, isActive, reel.musicTitle, reel.music?.audioUrl, reel.copyrightClaim?.isAudioMuted]);
 
   // When video data is ready (especially for newly uploaded video blob URLs), ensure proper playback
   const handleCanPlay = () => {
@@ -174,7 +237,8 @@ const ReelCard: React.FC<ReelCardProps> = ({
 
       video.muted = isMuted;
       if (!isMuted) {
-        video.volume = 1.0;
+        const origVol = ((reel.originalVolume ?? reel.music?.originalVolume ?? 100) / 100);
+        video.volume = Math.max(0, Math.min(1, origVol));
         soundManager.playSoundtrack(reel.musicTitle || 'LOKSY Reel Groove', 'dance');
         soundManager.setMuted(false);
       }
@@ -324,18 +388,40 @@ const ReelCard: React.FC<ReelCardProps> = ({
           </div>
         ) : (
           /* Video Element */
-          <video
-            ref={videoRef}
-            src={reel.videoUrl}
-            poster={reel.thumbnailUrl}
-            loop
-            playsInline
-            muted={isMuted}
-            onTimeUpdate={handleTimeUpdate}
-            onCanPlay={handleCanPlay}
-            onError={() => setHasVideoError(true)}
-            className="w-full h-full object-cover pointer-events-none"
-          />
+          <>
+            <video
+              ref={videoRef}
+              src={reel.videoUrl}
+              poster={reel.thumbnailUrl}
+              loop
+              playsInline
+              muted={isMuted}
+              onTimeUpdate={handleTimeUpdate}
+              onCanPlay={handleCanPlay}
+              onError={() => setHasVideoError(true)}
+              className="w-full h-full object-cover pointer-events-none"
+            />
+            {reel.music?.audioUrl && (
+              <audio
+                ref={musicAudioRef}
+                src={reel.music.audioUrl}
+                loop
+                preload="auto"
+                crossOrigin="anonymous"
+                playsInline
+                onTimeUpdate={handleMusicTimeUpdate}
+                onLoadedMetadata={handleMusicLoaded}
+                onError={(e) => {
+                  const target = e.currentTarget;
+                  if (reel.music?.audioUrl && !target.src.includes('allorigins')) {
+                    target.src = `https://api.allorigins.win/raw?url=${encodeURIComponent(reel.music.audioUrl)}`;
+                    target.load();
+                    target.play().catch(() => {});
+                  }
+                }}
+              />
+            )}
+          </>
         )}
 
         {/* Ambient Top & Bottom Contrast Gradients */}
@@ -581,15 +667,33 @@ const ReelCard: React.FC<ReelCardProps> = ({
             </div>
           )}
 
-          {/* Audio Track with Smooth CSS Marquee */}
-          <div className="flex items-center gap-2 text-xs text-gray-200 bg-black/40 backdrop-blur-md border border-white/10 px-3 py-1.5 rounded-full w-fit max-w-full overflow-hidden shadow-md">
-            <Music className="w-3.5 h-3.5 text-[#00E5FF] shrink-0" />
+          {/* Audio Track with Smooth CSS Marquee & Instagram Audio Page Link */}
+          <div
+            id={`reel-audio-pill-${reel.id}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              const trackToOpen: MusicTrack = reel.music || {
+                id: `track_reel_${reel.id}`,
+                title: reel.musicTitle || 'Original Audio',
+                artist: reel.musicArtist || reel.user.name,
+                album: 'LOKSY Reels',
+                audioUrl: reel.music?.audioUrl || '',
+                coverUrl: reel.thumbnailUrl || reel.user.avatar,
+                duration: 30,
+                category: 'Trending',
+              };
+              openAudioTrackModal(trackToOpen);
+            }}
+            className="flex items-center gap-2 text-xs text-gray-200 bg-black/50 hover:bg-black/80 backdrop-blur-md border border-white/15 hover:border-[#00E5FF]/50 px-3 py-1.5 rounded-full w-fit max-w-full overflow-hidden shadow-md cursor-pointer select-none group transition-colors"
+            title="Tap to view audio page and use this sound"
+          >
+            <Music className="w-3.5 h-3.5 text-[#00E5FF] shrink-0 group-hover:scale-110 transition-transform" />
             <div className="w-48 sm:w-60 overflow-hidden relative">
               <div className="animate-marquee inline-flex gap-8 whitespace-nowrap text-[11px] font-medium tracking-wide">
-                <span>{reel.musicTitle} • {reel.musicArtist}</span>
-                <span>🇮🇳 Trending Audio • {reel.musicTitle}</span>
-                <span>{reel.musicTitle} • {reel.musicArtist}</span>
-                <span>🇮🇳 Trending Audio • {reel.musicTitle}</span>
+                <span>{reel.music?.title || reel.musicTitle} • {reel.music?.artist || reel.musicArtist}</span>
+                <span>🎵 Tap to Use Audio • {reel.music?.title || reel.musicTitle}</span>
+                <span>{reel.music?.title || reel.musicTitle} • {reel.music?.artist || reel.musicArtist}</span>
+                <span>🎵 Tap to Use Audio • {reel.music?.title || reel.musicTitle}</span>
               </div>
             </div>
           </div>
@@ -708,18 +812,34 @@ const ReelCard: React.FC<ReelCardProps> = ({
             </span>
           </div>
 
-          {/* Spinning Audio Album Disc */}
+          {/* Spinning Audio Album Disc (Instagram style audio navigation) */}
           <div
-            className={`w-10 h-10 rounded-full bg-black p-1 border-2 border-white/40 shadow-2xl mt-1 ${
+            id={`reel-music-disc-${reel.id}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              const trackToOpen: MusicTrack = reel.music || {
+                id: `track_reel_${reel.id}`,
+                title: reel.musicTitle || 'Original Audio',
+                artist: reel.musicArtist || reel.user.name,
+                album: 'LOKSY Reels',
+                audioUrl: reel.music?.audioUrl || '',
+                coverUrl: reel.thumbnailUrl || reel.user.avatar,
+                duration: 30,
+                category: 'Trending',
+              };
+              openAudioTrackModal(trackToOpen);
+            }}
+            className={`w-10 h-10 rounded-full bg-black p-1 border-2 border-white/40 shadow-2xl mt-1 cursor-pointer hover:scale-110 active:scale-95 transition-transform ${
               isActive && isPlaying ? 'animate-spin' : ''
             }`}
             style={{ animationDuration: '4s' }}
+            title="Tap to see track page and use this audio"
           >
             <div className="w-full h-full rounded-full overflow-hidden bg-gradient-to-tr from-[#FF4668] via-[#FF8A00] to-[#00E5FF] flex items-center justify-center">
               <img
-                src={reel.user.avatar}
+                src={reel.music?.coverUrl || reel.user.avatar}
                 alt="music disc"
-                className="w-full h-full object-cover opacity-80"
+                className="w-full h-full object-cover opacity-85"
                 referrerPolicy="no-referrer"
               />
             </div>
