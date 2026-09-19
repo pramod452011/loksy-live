@@ -1,0 +1,8 @@
+{
+  "name": "Remix LOKSY - Apni Duniya, Apne Log",
+  "description": "Modern Indian social media platform connecting creators, friends, and communities through posts, stories, reels, and messaging.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}
