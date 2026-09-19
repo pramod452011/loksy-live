@@ -24,7 +24,7 @@ interface AuthScreenProps {
 type SignupStep = 1 | 2;
 
 export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup' }) => {
-  const { login, signup, showToast } = useApp();
+  const { login, signup, showToast, isEmailRegistered } = useApp();
   const [mode, setMode] = useState<'login' | 'signup'>(initialMode);
 
   // Signup multi-step: Step 1 (Info) -> Step 2 (Profile Photo)
@@ -101,6 +101,17 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup' }
       return;
     }
 
+    // Strict Rule: If email is already registered, reject registration, show red alert/toast, and switch to Login
+    if (isEmailRegistered(cleanEmail)) {
+      const alertMsg = 'Yeh Email pehle se registered hai! Kripya Login karein.';
+      setError(alertMsg);
+      showToast(alertMsg);
+      setMode('login');
+      setSignupStep(1);
+      setEmail(cleanEmail);
+      return;
+    }
+
     if (!cleanName || cleanName.length < 2) {
       setError('Please enter your full name so friends can find you.');
       return;
@@ -144,19 +155,50 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup' }
   // Step 2: Finalize signup & immediately redirect to home feed
   const handleFinishSignup = (skipPhoto = false) => {
     setError('');
+    const cleanEmail = email.trim();
+
+    // Double check email uniqueness before committing
+    if (isEmailRegistered(cleanEmail)) {
+      const alertMsg = 'Yeh Email pehle se registered hai! Kripya Login karein.';
+      setError(alertMsg);
+      showToast(alertMsg);
+      setMode('login');
+      setSignupStep(1);
+      setEmail(cleanEmail);
+      return;
+    }
+
     setIsLoading(true);
 
     const finalAvatar = skipPhoto ? defaultAvatar : avatarPreview;
     const cleanUsername = username.trim().toLowerCase().replace(/^@/, '');
 
-    signup({
-      name: fullName.trim(),
-      username: cleanUsername,
-      emailOrPhone: email.trim(),
-      avatar: finalAvatar,
-      password: password.trim(),
-      bio: 'Indian creator on LOKSY 🇮🇳 | Apni Duniya, Apne Log',
-    });
+    try {
+      signup({
+        name: fullName.trim(),
+        username: cleanUsername,
+        emailOrPhone: cleanEmail,
+        avatar: finalAvatar,
+        password: password.trim(),
+        bio: 'Indian creator on LOKSY 🇮🇳 | Apni Duniya, Apne Log',
+      });
+    } catch (err: unknown) {
+      setIsLoading(false);
+      const isDuplicate =
+        (err as any)?.code === 'auth/email-already-in-use' ||
+        (err instanceof Error && err.message.includes('email-already-in-use'));
+
+      if (isDuplicate) {
+        const alertMsg = 'Yeh Email pehle se registered hai! Kripya Login karein.';
+        setError(alertMsg);
+        showToast(alertMsg);
+        setMode('login');
+        setSignupStep(1);
+        setEmail(cleanEmail);
+      } else {
+        setError(err instanceof Error ? err.message : 'Registration failed. Please try again.');
+      }
+    }
   };
 
   // Email / Username + Password Login
@@ -290,9 +332,23 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup' }
 
         {/* Error Alert */}
         {error && (
-          <div className="mb-4 p-3 rounded-xl bg-rose-500/15 border border-rose-500/30 text-rose-300 text-xs font-medium flex items-start gap-2">
-            <span className="shrink-0 mt-0.5">⚠️</span>
-            <span>{error}</span>
+          <div
+            id="auth-error-alert"
+            className={`mb-4 p-3.5 rounded-xl border text-xs font-semibold flex items-start gap-2.5 transition-all ${
+              error.includes('pehle se registered')
+                ? 'bg-rose-500/20 border-rose-500/60 text-rose-200 shadow-lg shadow-rose-950/40'
+                : 'bg-rose-500/15 border-rose-500/30 text-rose-300'
+            }`}
+          >
+            <span className="shrink-0 text-sm leading-none mt-0.5">🛑</span>
+            <div className="flex-1">
+              <p className="font-bold text-rose-100">{error}</p>
+              {error.includes('pehle se registered') && (
+                <p className="text-[11px] text-rose-300/90 font-normal mt-0.5">
+                  Aapka account pehle se bana hua hai. Login form open kar diya gaya hai.
+                </p>
+              )}
+            </div>
           </div>
         )}
 
@@ -486,7 +542,10 @@ export const AuthScreen: React.FC<AuthScreenProps> = ({ initialMode = 'signup' }
                         type="email"
                         id="auth-signup-email"
                         value={email}
-                        onChange={(e) => setEmail(e.target.value)}
+                        onChange={(e) => {
+                          setEmail(e.target.value);
+                          if (error) setError('');
+                        }}
                         placeholder="you@example.com"
                         className="w-full pl-10 pr-4 py-2.5 rounded-xl bg-white/5 border border-white/10 text-white text-xs placeholder-gray-500 focus:outline-none focus:border-[#FF4668] transition-colors"
                         autoFocus

@@ -167,6 +167,7 @@ interface AppContextType {
     email?: string,
     extra?: { bio?: string; avatar?: string; password?: string }
   ) => void;
+  isEmailRegistered: (email: string) => boolean;
   logout: () => void;
 
   // Toast notifications
@@ -1754,6 +1755,30 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     navigateTo('home');
   }, [navigateTo, showToast]);
 
+  // Check if an email is already registered across local storage, registered accounts, and demo creators
+  const isEmailRegistered = useCallback((emailToCheck: string): boolean => {
+    const clean = emailToCheck.trim().toLowerCase();
+    if (!clean) return false;
+    // Built-in demo accounts
+    if (clean === 'aarav@loksy.app' || clean === 'priya@loksy.app') return true;
+
+    try {
+      const rawAccounts = localStorage.getItem('loksy_registered_accounts');
+      if (rawAccounts) {
+        const accounts = JSON.parse(rawAccounts);
+        const found = accounts.some((a: any) =>
+          a.identifier?.trim().toLowerCase() === clean ||
+          a.email?.trim().toLowerCase() === clean ||
+          a.user?.email?.trim().toLowerCase() === clean
+        );
+        if (found) return true;
+      }
+    } catch (e) {
+      console.warn('[AppContext] Error checking registered accounts', e);
+    }
+    return false;
+  }, []);
+
   const signup = useCallback((
     nameOrData: string | { name: string; username: string; emailOrPhone: string; bio?: string; avatar?: string; password?: string },
     usernameArg?: string,
@@ -1781,6 +1806,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       bio = extraArg?.bio?.trim() || '';
       avatar = extraArg?.avatar?.trim() || '';
       password = extraArg?.password?.trim() || '';
+    }
+
+    // Strictly prevent duplicate email registrations: auth/email-already-in-use
+    if (isEmailRegistered(emailOrPhone)) {
+      const err = new Error('auth/email-already-in-use');
+      (err as any).code = 'auth/email-already-in-use';
+      throw err;
     }
 
     const cleanUsername = rawUsername
@@ -1814,7 +1846,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const rawAccounts = localStorage.getItem('loksy_registered_accounts');
       const accounts = rawAccounts ? JSON.parse(rawAccounts) : [];
       const updatedAccounts = [
-        ...accounts.filter((a: any) => a.identifier !== emailOrPhone && a.username !== cleanUsername),
+        ...accounts,
         {
           identifier: emailOrPhone,
           username: cleanUsername,
@@ -1985,6 +2017,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         login,
         signup,
+        isEmailRegistered,
         logout,
 
         toastMessage,
