@@ -33,6 +33,8 @@ import {
   Eye,
   RotateCw,
   Users,
+  ChevronLeft,
+  Plus,
 } from 'lucide-react';
 import { CopyrightGuidelinesModal } from './CopyrightGuidelinesModal';
 import { DiscardModal } from './create/DiscardModal';
@@ -46,6 +48,14 @@ import { soundManager } from '../utils/audioEngine';
 
 export type CreationStep = 'media' | 'crop' | 'edit' | 'details' | 'sharing' | 'done';
 export type AspectRatioOption = 'original' | '1:1' | '4:5' | '16:9' | '9:16';
+
+export interface MediaItem {
+  id: string;
+  url: string;
+  type: 'image' | 'video';
+  localKey?: string;
+  thumbnailUrl?: string;
+}
 
 export const CreateModal: React.FC = () => {
   const {
@@ -66,6 +76,9 @@ export const CreateModal: React.FC = () => {
   const [activeType, setActiveType] = useState<'post' | 'reel'>('post');
 
   // Media state
+  const [mediaItems, setMediaItems] = useState<MediaItem[]>([]);
+  const [activeMediaIndex, setActiveMediaIndex] = useState<number>(0);
+  const [isMultiSelectMode, setIsMultiSelectMode] = useState<boolean>(false);
   const [mediaUrl, setMediaUrl] = useState<string>('');
   const [localMediaKey, setLocalMediaKey] = useState<string>('');
   const [mediaType, setMediaType] = useState<'image' | 'video'>('image');
@@ -95,7 +108,7 @@ export const CreateModal: React.FC = () => {
   const [showAudioPicker, setShowAudioPicker] = useState<boolean>(false);
   const [showCoverPickerModal, setShowCoverPickerModal] = useState<boolean>(false);
 
-  // Details state
+  // Details & Instagram Share screen state
   const [caption, setCaption] = useState<string>('');
   const [location, setLocation] = useState<string>('Marine Drive, Mumbai');
   const [showLocationDropdown, setShowLocationDropdown] = useState<boolean>(false);
@@ -109,6 +122,7 @@ export const CreateModal: React.FC = () => {
   const [disableComments, setDisableComments] = useState<boolean>(false);
   const [highQualityUpload, setHighQualityUpload] = useState<boolean>(true);
   const [shareToReelsFeed, setShareToReelsFeed] = useState<boolean>(true);
+  const [alsoShareToFeed, setAlsoShareToFeed] = useState<boolean>(true);
 
   // Tag people
   const [taggedUserIds, setTaggedUserIds] = useState<string[]>([]);
@@ -124,7 +138,11 @@ export const CreateModal: React.FC = () => {
     rightsHolder: 'Sony Music India & Dharma Productions',
   });
 
-  // Copyright scan & submission state
+  // Copyright scan, pre-upload checking & attribution state
+  const [isPreUploadChecking, setIsPreUploadChecking] = useState<boolean>(false);
+  const [uploadProgress, setUploadProgress] = useState<number>(0);
+  const [preUploadCheckText, setPreUploadCheckText] = useState<string>('Checking for copyright issues...');
+  const [isSimulateCopyrightClaim, setIsSimulateCopyrightClaim] = useState<boolean>(false);
   const [isScanningCopyright, setIsScanningCopyright] = useState<boolean>(false);
   const [scanProgress, setScanProgress] = useState<number>(0);
   const [showCopyrightWarning, setShowCopyrightWarning] = useState<boolean>(false);
@@ -132,8 +150,15 @@ export const CreateModal: React.FC = () => {
   const [showGuidelinesModal, setShowGuidelinesModal] = useState<boolean>(false);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const addMoreMediaInputRef = useRef<HTMLInputElement>(null);
+  const cameraRollInputRef = useRef<HTMLInputElement>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const scanIntervalRef = useRef<number | null>(null);
+
+  // Instagram Audio Attribution Pill logic
+  const officialAudioPill = selectedMusicTrack
+    ? `${selectedMusicTrack.title} • ${selectedMusicTrack.artist}`
+    : `Original Audio • @${currentUser?.username || 'user'}`;
 
   // Sample Indian video & media presets
   const sampleVideos = [
@@ -319,55 +344,102 @@ export const CreateModal: React.FC = () => {
 
   const [isProcessingMedia, setIsProcessingMedia] = useState<boolean>(false);
 
-  // Handle local file selection with persistent Base64 / IndexedDB storage
-  const handleFileSelect = async (file: File) => {
-    const isVideo = file.type.startsWith('video') || Boolean(file.name.match(/\.(mp4|webm|mov|m4v)$/i));
-    const isImage = file.type.startsWith('image') || Boolean(file.name.match(/\.(jpg|jpeg|png|webp|gif)$/i));
-
-    if (!isVideo && !isImage) {
-      showToast('Please choose a valid video (MP4, MOV, WebM) or image (JPG, PNG).');
-      return;
-    }
+  // Handle local file(s) selection with persistent Base64 / IndexedDB storage
+  const handleFilesSelect = async (files: FileList | File[]) => {
+    const fileList = Array.from(files);
+    if (fileList.length === 0) return;
 
     setIsProcessingMedia(true);
-    showToast(`Storing ${file.name} for persistent playback... ✨`);
+    showToast(`Loading ${fileList.length > 1 ? `${fileList.length} items` : fileList[0].name}... ✨`);
 
     try {
-      const stored = await storeMedia(file);
-      setMediaUrl(stored.dataUrl);
-      setLocalMediaKey(stored.id);
-      setMediaType(isVideo ? 'video' : 'image');
+      const newItems: MediaItem[] = [];
+      for (let i = 0; i < fileList.length; i++) {
+        const file = fileList[i];
+        const isVideo = file.type.startsWith('video') || Boolean(file.name.match(/\.(mp4|webm|mov|m4v)$/i));
+        const isImage = file.type.startsWith('image') || Boolean(file.name.match(/\.(jpg|jpeg|png|webp|gif)$/i));
 
-      if (stored.thumbnailUrl) {
-        setCustomCoverUrl(stored.thumbnailUrl);
+        if (!isVideo && !isImage) continue;
+
+        try {
+          const stored = await storeMedia(file);
+          newItems.push({
+            id: `item_${Date.now()}_${i}`,
+            url: stored.dataUrl,
+            type: isVideo ? 'video' : 'image',
+            localKey: stored.id,
+            thumbnailUrl: stored.thumbnailUrl,
+          });
+        } catch {
+          const objectUrl = URL.createObjectURL(file);
+          registerSessionBlob(objectUrl);
+          newItems.push({
+            id: `item_${Date.now()}_${i}`,
+            url: objectUrl,
+            type: isVideo ? 'video' : 'image',
+          });
+        }
       }
 
-      if (activeType === 'reel' || isVideo) {
-        setAspectRatio(activeType === 'reel' ? '9:16' : '4:5');
+      if (newItems.length > 0) {
+        setMediaItems(newItems);
+        setActiveMediaIndex(0);
+        const primary = newItems[0];
+        setMediaUrl(primary.url);
+        setLocalMediaKey(primary.localKey || '');
+        setMediaType(primary.type);
+
+        if (primary.thumbnailUrl) {
+          setCustomCoverUrl(primary.thumbnailUrl);
+        }
+
+        if (activeType === 'reel' || primary.type === 'video') {
+          setAspectRatio(activeType === 'reel' ? '9:16' : '4:5');
+        } else {
+          setAspectRatio('1:1');
+        }
+
+        setStep('crop');
+        showToast(`Loaded ${newItems.length} item${newItems.length > 1 ? 's (Carousel ready)' : ''}`);
       } else {
-        setAspectRatio('1:1');
+        showToast('Please choose valid video or image files.');
       }
-
-      setStep('crop');
-      showToast(`Ready! ${file.name}`);
-    } catch (err) {
-      console.warn('[CreateModal] Fallback to standard objectUrl:', err);
-      const objectUrl = URL.createObjectURL(file);
-      registerSessionBlob(objectUrl);
-      setMediaUrl(objectUrl);
-      setMediaType(isVideo ? 'video' : 'image');
-      setStep('crop');
-      showToast(`Loaded ${file.name}`);
     } finally {
       setIsProcessingMedia(false);
     }
   };
 
+  const handleFileSelect = (file: File) => {
+    handleFilesSelect([file]);
+  };
+
+  // Add more media to existing carousel
+  const handleAddMoreMedia = async (files: FileList | File[]) => {
+    const fileList = Array.from(files);
+    if (fileList.length === 0) return;
+
+    for (let i = 0; i < fileList.length; i++) {
+      const file = fileList[i];
+      const isVideo = file.type.startsWith('video') || Boolean(file.name.match(/\.(mp4|webm|mov|m4v)$/i));
+      const objectUrl = URL.createObjectURL(file);
+      registerSessionBlob(objectUrl);
+      setMediaItems((prev) => [
+        ...prev,
+        {
+          id: `item_${Date.now()}_${i}`,
+          url: objectUrl,
+          type: isVideo ? 'video' : 'image',
+        },
+      ]);
+    }
+    showToast(`Added ${fileList.length} media item(s) to carousel 🎠`);
+  };
+
   const handleDrop = (e: React.DragEvent<HTMLDivElement>) => {
     e.preventDefault();
     e.stopPropagation();
-    if (e.dataTransfer.files && e.dataTransfer.files[0]) {
-      handleFileSelect(e.dataTransfer.files[0]);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFilesSelect(e.dataTransfer.files);
     }
   };
 
@@ -544,19 +616,51 @@ export const CreateModal: React.FC = () => {
 
       setStep('done');
       soundManager.stopSoundtrack();
-      showToast('🎉 Your post has been shared! Background Content ID scan initiated.');
-    }, 450);
+      showToast('🎉 Your post has been shared to LOKSY community!');
+    }, 500);
   };
 
-  // Immediate Post-Upload Background Scan on Share
+  // Instagram Pre-Upload Copyright Check Simulation & Share Handler
   const handleShareClick = () => {
     if (!mediaUrl) {
       showToast('Please pick or upload media to share.');
       return;
     }
 
-    // Immediately trigger upload to feed
-    executeFinalPublish(false);
+    setIsPreUploadChecking(true);
+    setUploadProgress(15);
+    setPreUploadCheckText('Checking for copyright issues...');
+
+    // Simulate Instagram's real-time pre-upload audio check
+    setTimeout(() => {
+      setUploadProgress(50);
+    }, 350);
+
+    setTimeout(() => {
+      setUploadProgress(85);
+
+      // Check if simulated copyright claim is enabled or commercial audio flagged
+      if (isSimulateCopyrightClaim) {
+        setIsPreUploadChecking(false);
+        setFlaggedAudio({
+          title: selectedMusicTrack?.title || selectedAudio.title,
+          artist: selectedMusicTrack?.artist || selectedAudio.artist,
+          isCommercial: true,
+          rightsHolder: 'T-Series / Sony Music Entertainment',
+        });
+        setShowCopyrightWarning(true);
+        return;
+      }
+
+      // Check passed
+      setPreUploadCheckText('Copyright check passed ✓');
+      setUploadProgress(100);
+
+      setTimeout(() => {
+        setIsPreUploadChecking(false);
+        executeFinalPublish(false);
+      }, 400);
+    }, 950);
   };
 
   // Helper for aspect ratio container sizing
@@ -672,10 +776,10 @@ export const CreateModal: React.FC = () => {
                 id="instagram-header-share-btn"
                 type="button"
                 onClick={handleShareClick}
-                disabled={isScanningCopyright}
+                disabled={isPreUploadChecking}
                 className="text-sm font-bold text-[#0095F6] hover:text-[#3897f0] disabled:opacity-50 active:scale-95 transition-all flex items-center gap-1.5"
               >
-                {isScanningCopyright ? (
+                {isPreUploadChecking ? (
                   <RotateCw className="w-4 h-4 animate-spin text-[#0095F6]" />
                 ) : (
                   'Share'
@@ -685,23 +789,25 @@ export const CreateModal: React.FC = () => {
           </div>
         </header>
 
-        {/* 2-Second Copyright Fingerprinting Banner */}
-        {isScanningCopyright && (
+        {/* Instagram Upload & Pre-upload Copyright Check Progress Bar */}
+        {isPreUploadChecking && (
           <div
-            id="instagram-copyright-scan-bar"
-            className="bg-gradient-to-r from-[#FF4668]/20 via-[#FF8A00]/20 to-[#00E5FF]/20 border-b border-[#FF4668]/40 px-4 py-2.5 flex items-center justify-between text-xs animate-fade-in"
+            id="instagram-upload-progress-banner"
+            className="w-full bg-[#161a26] border-b border-white/10 px-4 py-2.5 flex flex-col gap-1.5 animate-fade-in"
           >
-            <div className="flex items-center gap-2">
-              <Shield className="w-4 h-4 text-[#FF8A00] animate-pulse" />
-              <span className="font-semibold text-white">Scanning audio Content ID & Copyright...</span>
-              <span className="font-mono text-[#00E5FF] text-[11px] bg-white/10 px-1.5 py-0.5 rounded">
-                {scanProgress}%
+            <div className="flex items-center justify-between text-xs">
+              <div className="flex items-center gap-2 text-[#0095F6] font-semibold">
+                <CheckCircle2 className="w-4 h-4 fill-[#0095F6] text-black shrink-0" />
+                <span className="tracking-tight">{preUploadCheckText}</span>
+              </div>
+              <span className="font-mono text-[11px] text-[#0095F6] font-bold">
+                {uploadProgress}%
               </span>
             </div>
-            <div className="w-32 bg-white/10 h-1.5 rounded-full overflow-hidden">
+            <div className="w-full bg-white/10 h-1 rounded-full overflow-hidden">
               <div
-                className="h-full bg-gradient-to-r from-[#FF4668] to-[#00E5FF] transition-all duration-75"
-                style={{ width: `${scanProgress}%` }}
+                className="h-full bg-[#0095F6] transition-all duration-200"
+                style={{ width: `${uploadProgress}%` }}
               />
             </div>
           </div>
@@ -784,10 +890,44 @@ export const CreateModal: React.FC = () => {
               ref={fileInputRef}
               type="file"
               accept="video/*,image/*"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files && e.target.files.length > 0) {
+                  handleFilesSelect(e.target.files);
+                }
+              }}
+            />
+
+            <input
+              ref={addMoreMediaInputRef}
+              type="file"
+              accept="video/*,image/*"
+              multiple
+              className="hidden"
+              onChange={(e) => {
+                if (e.target.files && e.target.files.length > 0) {
+                  handleAddMoreMedia(e.target.files);
+                }
+              }}
+            />
+
+            <input
+              ref={cameraRollInputRef}
+              type="file"
+              accept="image/*"
               className="hidden"
               onChange={(e) => {
                 if (e.target.files && e.target.files[0]) {
-                  handleFileSelect(e.target.files[0]);
+                  const file = e.target.files[0];
+                  const reader = new FileReader();
+                  reader.onload = (evt) => {
+                    if (evt.target?.result) {
+                      setCustomCoverUrl(evt.target.result as string);
+                      showToast(`Cover selected from camera roll: ${file.name} 🖼️`);
+                    }
+                  };
+                  reader.readAsDataURL(file);
                 }
               }}
             />
@@ -849,10 +989,10 @@ export const CreateModal: React.FC = () => {
               className="absolute top-4 left-1/2 -translate-x-1/2 z-30 flex items-center gap-1.5 p-1 rounded-full bg-black/75 backdrop-blur-xl border border-white/20 shadow-2xl"
             >
               {[
-                { id: '1:1', label: '1:1 Square', icon: '■' },
-                { id: '4:5', label: '4:5 Portrait', icon: '▮' },
-                { id: '9:16', label: '9:16 Reel', icon: '📱' },
-                { id: '16:9', label: '16:9 Landscape', icon: '▬' },
+                { id: '1:1', label: '1:1', icon: '■' },
+                { id: '4:5', label: '4:5', icon: '▮' },
+                { id: '9:16', label: '9:16', icon: '📱' },
+                { id: 'original', label: 'Original', icon: '⧉' },
               ].map((opt) => {
                 const isActive = aspectRatio === opt.id;
                 return (
@@ -873,6 +1013,19 @@ export const CreateModal: React.FC = () => {
                 );
               })}
             </div>
+
+            {/* Multiple Media Carousel Indicator Badge */}
+            {mediaItems.length > 1 && (
+              <div
+                id="instagram-carousel-indicator-badge"
+                className="absolute top-4 right-4 z-30 flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-black/75 backdrop-blur-xl border border-white/20 text-white text-xs font-semibold shadow-lg"
+              >
+                <Layers className="w-3.5 h-3.5 text-[#00E5FF]" />
+                <span>
+                  {activeMediaIndex + 1} / {mediaItems.length}
+                </span>
+              </div>
+            )}
 
             {/* Framed Media Container */}
             <div
@@ -901,6 +1054,39 @@ export const CreateModal: React.FC = () => {
                   className="w-full h-full object-cover"
                   referrerPolicy="no-referrer"
                 />
+              )}
+
+              {/* Carousel Previous & Next Chevrons */}
+              {mediaItems.length > 1 && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextIdx = (activeMediaIndex - 1 + mediaItems.length) % mediaItems.length;
+                      setActiveMediaIndex(nextIdx);
+                      setMediaUrl(mediaItems[nextIdx].url);
+                      setMediaType(mediaItems[nextIdx].type);
+                    }}
+                    className="absolute left-3 top-1/2 -translate-y-1/2 z-30 w-8 h-8 rounded-full bg-black/60 hover:bg-black/85 backdrop-blur-md border border-white/20 text-white flex items-center justify-center shadow-lg transition-transform active:scale-90"
+                    title="Previous media"
+                  >
+                    <ChevronLeft className="w-5 h-5" />
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextIdx = (activeMediaIndex + 1) % mediaItems.length;
+                      setActiveMediaIndex(nextIdx);
+                      setMediaUrl(mediaItems[nextIdx].url);
+                      setMediaType(mediaItems[nextIdx].type);
+                    }}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 z-30 w-8 h-8 rounded-full bg-black/60 hover:bg-black/85 backdrop-blur-md border border-white/20 text-white flex items-center justify-center shadow-lg transition-transform active:scale-90"
+                    title="Next media"
+                  >
+                    <ChevronRight className="w-5 h-5" />
+                  </button>
+                </>
               )}
             </div>
 
@@ -934,7 +1120,6 @@ export const CreateModal: React.FC = () => {
                     {[
                       { id: '1:1', label: '1:1 Square' },
                       { id: '4:5', label: '4:5 Portrait' },
-                      { id: '16:9', label: '16:9 Landscape' },
                       { id: '9:16', label: '9:16 Reel' },
                       { id: 'original', label: 'Original' },
                     ].map((opt) => (
@@ -1019,22 +1204,84 @@ export const CreateModal: React.FC = () => {
               </button>
             </div>
 
-            {/* Bottom-Right Video Play / Mute Controls */}
-            {mediaType === 'video' && (
-              <div className="absolute bottom-4 right-4 z-30 flex items-center gap-2">
+            {/* Bottom-Right Controls: Select Multiple & Play/Mute */}
+            <div className="absolute bottom-4 right-4 z-30 flex items-center gap-2">
+              {/* Select Multiple Media (Carousel) Toggle */}
+              <button
+                id="instagram-select-multiple-btn"
+                type="button"
+                onClick={() => setIsMultiSelectMode(!isMultiSelectMode)}
+                className={`w-9 h-9 rounded-full backdrop-blur-md border flex items-center justify-center shadow-lg transition-transform active:scale-90 ${
+                  isMultiSelectMode || mediaItems.length > 1
+                    ? 'bg-[#0095F6] text-white border-[#0095F6]'
+                    : 'bg-black/65 text-white border-white/20 hover:bg-black/80'
+                }`}
+                title="Select multiple (Carousel)"
+              >
+                <Layers className="w-4 h-4" />
+              </button>
+
+              {mediaType === 'video' && (
+                <>
+                  <button
+                    type="button"
+                    onClick={togglePlay}
+                    className="w-9 h-9 rounded-full bg-black/65 text-white backdrop-blur-md border border-white/20 flex items-center justify-center shadow-lg hover:bg-black/80 active:scale-90 transition-transform"
+                    title={isPlaying ? 'Pause' : 'Play'}
+                  >
+                    {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 fill-white translate-x-0.5" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={toggleMute}
+                    className="w-9 h-9 rounded-full bg-black/65 text-white backdrop-blur-md border border-white/20 flex items-center justify-center shadow-lg hover:bg-black/80 active:scale-90 transition-transform"
+                    title={isMuted ? 'Unmute' : 'Mute'}
+                  >
+                    {isMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4 text-[#00E5FF]" />}
+                  </button>
+                </>
+              )}
+            </div>
+
+            {/* Multiple Media Thumbnail Strip */}
+            {(isMultiSelectMode || mediaItems.length > 1) && (
+              <div
+                id="instagram-carousel-thumbnail-strip"
+                className="absolute bottom-16 right-4 z-30 flex items-center gap-2 p-1.5 bg-black/80 backdrop-blur-xl border border-white/20 rounded-2xl shadow-2xl max-w-[280px] overflow-x-auto scrollbar-none"
+              >
+                {mediaItems.map((item, idx) => (
+                  <button
+                    key={item.id}
+                    type="button"
+                    onClick={() => {
+                      setActiveMediaIndex(idx);
+                      setMediaUrl(item.url);
+                      setMediaType(item.type);
+                    }}
+                    className={`relative w-11 h-11 rounded-lg overflow-hidden shrink-0 border-2 transition-transform active:scale-95 ${
+                      activeMediaIndex === idx ? 'border-[#0095F6] scale-105 shadow-md' : 'border-transparent opacity-70 hover:opacity-100'
+                    }`}
+                  >
+                    {item.type === 'video' ? (
+                      <video src={item.url} className="w-full h-full object-cover pointer-events-none" />
+                    ) : (
+                      <img src={item.url} alt="" className="w-full h-full object-cover" />
+                    )}
+                    <span className="absolute bottom-0.5 right-0.5 text-[9px] font-bold bg-black/70 px-1 rounded text-white">
+                      {idx + 1}
+                    </span>
+                  </button>
+                ))}
+
+                {/* Add More Media Button */}
                 <button
                   type="button"
-                  onClick={togglePlay}
-                  className="w-9 h-9 rounded-full bg-black/65 text-white backdrop-blur-md border border-white/20 flex items-center justify-center shadow-lg hover:bg-black/80 active:scale-90 transition-transform"
+                  onClick={() => addMoreMediaInputRef.current?.click()}
+                  className="w-11 h-11 rounded-lg border border-dashed border-white/30 hover:border-white/60 bg-white/5 hover:bg-white/10 flex flex-col items-center justify-center shrink-0 text-white transition-colors"
+                  title="Add more photos or videos"
                 >
-                  {isPlaying ? <Pause className="w-4 h-4" /> : <Play className="w-4 h-4 fill-white translate-x-0.5" />}
-                </button>
-                <button
-                  type="button"
-                  onClick={toggleMute}
-                  className="w-9 h-9 rounded-full bg-black/65 text-white backdrop-blur-md border border-white/20 flex items-center justify-center shadow-lg hover:bg-black/80 active:scale-90 transition-transform"
-                >
-                  {isMuted ? <VolumeX className="w-4 h-4 text-rose-400" /> : <Volume2 className="w-4 h-4 text-[#00E5FF]" />}
+                  <Plus className="w-4 h-4 text-[#00E5FF]" />
+                  <span className="text-[9px] text-gray-300 font-medium">Add</span>
                 </button>
               </div>
             )}
@@ -1204,19 +1451,24 @@ export const CreateModal: React.FC = () => {
               {/* Adjust / Video Tools Tab Content */}
               {activeEditTab === 'adjust' && (
                 <div className="p-4 space-y-5 flex-1">
-                  {/* Video Cover Frame Selector */}
+                  {/* Instagram Video Cover Frame Selector */}
                   {mediaType === 'video' && (
-                    <div className="space-y-2">
-                      <label className="text-xs font-bold text-gray-200 block flex items-center gap-1.5">
-                        <ImageIcon className="w-3.5 h-3.5 text-[#FF8A00]" />
-                        <span>Select Cover Frame</span>
-                      </label>
+                    <div className="space-y-3 p-3 bg-white/[0.03] rounded-2xl border border-white/10">
+                      <div className="flex items-center justify-between">
+                        <label className="text-xs font-bold text-gray-200 flex items-center gap-1.5">
+                          <ImageIcon className="w-3.5 h-3.5 text-[#FF8A00]" />
+                          <span>Cover Frame Selector</span>
+                        </label>
+                        <span className="text-[10px] font-mono text-[#00E5FF] bg-white/10 px-1.5 py-0.5 rounded">
+                          {customCoverUrl.startsWith('data:') ? 'Camera Roll' : `${coverFrameTime.toFixed(1)}s`}
+                        </span>
+                      </div>
                       <p className="text-[11px] text-gray-400">
-                        Choose a frame from your video or select a thumbnail image.
+                        Scrub video to choose your reel thumbnail or upload directly from camera roll.
                       </p>
 
                       <div className="flex items-center gap-3">
-                        <div className="w-14 h-14 rounded-xl bg-black border border-white/20 overflow-hidden flex items-center justify-center shrink-0">
+                        <div className="relative w-16 h-20 rounded-xl bg-black border-2 border-white/20 overflow-hidden flex items-center justify-center shrink-0 shadow-lg group">
                           <img
                             src={
                               customCoverUrl ||
@@ -1226,13 +1478,18 @@ export const CreateModal: React.FC = () => {
                             className="w-full h-full object-cover"
                             referrerPolicy="no-referrer"
                           />
+                          <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity text-[10px] font-bold text-white">
+                            Cover
+                          </div>
                         </div>
-                        <div className="flex-1 space-y-1.5">
+
+                        <div className="flex-1 space-y-2">
                           <input
+                            id="instagram-cover-video-scrubber"
                             type="range"
                             min={0}
                             max={videoDuration || 15}
-                            step={0.5}
+                            step={0.2}
                             value={coverFrameTime}
                             onChange={(e) => {
                               const val = parseFloat(e.target.value);
@@ -1243,17 +1500,43 @@ export const CreateModal: React.FC = () => {
                             }}
                             className="w-full accent-[#0095F6] cursor-pointer"
                           />
-                          <div className="text-[10px] text-gray-400 flex justify-between">
-                            <span>Cover at: {coverFrameTime.toFixed(1)}s</span>
+                          <div className="flex items-center justify-between gap-2">
+                            {/* Add from camera roll button */}
+                            <button
+                              id="instagram-cover-camera-roll-btn"
+                              type="button"
+                              onClick={() => cameraRollInputRef.current?.click()}
+                              className="px-2.5 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 border border-white/15 text-[11px] font-semibold text-white flex items-center gap-1.5 active:scale-95 transition-all cursor-pointer"
+                            >
+                              <UploadCloud className="w-3.5 h-3.5 text-[#0095F6]" />
+                              <span>Add from camera roll</span>
+                            </button>
+
+                            {/* Capture Current Frame */}
                             <button
                               type="button"
                               onClick={() => {
-                                setCustomCoverUrl('https://images.unsplash.com/photo-1599661046289-e31897846e41?w=800&auto=format&fit=crop&q=80');
-                                showToast('Selected custom high-res poster frame');
+                                if (videoRef.current) {
+                                  try {
+                                    const canvas = document.createElement('canvas');
+                                    canvas.width = videoRef.current.videoWidth || 720;
+                                    canvas.height = videoRef.current.videoHeight || 1280;
+                                    const ctx = canvas.getContext('2d');
+                                    if (ctx) {
+                                      ctx.drawImage(videoRef.current, 0, 0, canvas.width, canvas.height);
+                                      const dataUrl = canvas.toDataURL('image/jpeg', 0.85);
+                                      setCustomCoverUrl(dataUrl);
+                                      showToast(`Captured cover frame at ${currentTime.toFixed(1)}s 📸`);
+                                    }
+                                  } catch {
+                                    setCoverFrameTime(currentTime);
+                                    showToast(`Cover frame set to ${currentTime.toFixed(1)}s`);
+                                  }
+                                }
                               }}
-                              className="text-[#0095F6] hover:underline"
+                              className="text-[11px] text-[#00E5FF] hover:underline font-medium"
                             >
-                              Preset cover
+                              Capture current
                             </button>
                           </div>
                         </div>
@@ -1420,6 +1703,15 @@ export const CreateModal: React.FC = () => {
                     }}
                   />
                 )}
+
+                {/* Instagram Official Audio Attribution Pill Overlay */}
+                <div
+                  id="instagram-preview-audio-pill"
+                  className="absolute bottom-3 left-3 z-20 flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/75 backdrop-blur-md border border-white/20 text-white text-xs font-semibold shadow-lg max-w-[85%]"
+                >
+                  <Music className="w-3.5 h-3.5 text-[#0095F6] shrink-0" />
+                  <span className="truncate">{officialAudioPill}</span>
+                </div>
               </div>
             </div>
 

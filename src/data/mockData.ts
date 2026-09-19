@@ -454,17 +454,6 @@ export const INITIAL_REELS: Reel[] = [
     isLiked: true,
     isSaved: false,
     createdAt: '3 days ago',
-    copyrightClaim: {
-      id: 'claim_reel_me_2',
-      type: 'audio',
-      status: 'flagged',
-      audioTrack: 'Kesariya (Acoustic Folk Fusion)',
-      audioArtist: 'Pritam & Arijit Singh',
-      audioClaimant: 'Sony Music Entertainment India / Dharma Productions',
-      audioPolicy: 'Audio muted due to copyright claim',
-      isAudioMuted: true,
-      detectedAt: '3 days ago',
-    },
   },
   {
     id: 'reel_1',

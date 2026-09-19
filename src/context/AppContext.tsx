@@ -127,6 +127,8 @@ interface AppContextType {
   toggleSaveReel: (reelId: string) => void;
   incrementReelViews: (reelId: string) => void;
   createReel: (newReel: Omit<Reel, 'id' | 'createdAt' | 'likesCount' | 'commentsCount' | 'sharesCount' | 'isLiked' | 'isSaved' | 'user'>) => void;
+  deleteReel: (reelId: string) => Promise<void>;
+  editReelCaption: (reelId: string, newCaption: string) => Promise<void>;
 
   // Modals & Safety
   isCreateModalOpen: boolean;
@@ -968,10 +970,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
         }
 
-        // Notify user if action was taken
-        if (claim.isAudioMuted) {
-          showToast(`⚠️ Copyright claim: Audio track on ${targetType} was automatically muted.`);
-        } else if (claim.hasVisualWarning) {
+        // Notify user if visual notice
+        if (claim.hasVisualWarning) {
           showToast(`⚠️ Copyright notice: Visual content match detected on ${targetType}.`);
         }
       }, 1800);
@@ -1611,6 +1611,50 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     showToast('Reel published to LOKSY Reels! 🎬');
   }, [currentUser, showToast, runContentIdAudit]);
 
+  const deleteReel = useCallback(async (reelId: string) => {
+    setReels(prev => {
+      const target = prev.find(r => r.id === reelId);
+      const mediaKey = target?.localMediaKey || reelId;
+      deleteStoredMedia(mediaKey).catch(() => {});
+      if (mediaKey !== reelId) {
+        deleteStoredMedia(reelId).catch(() => {});
+      }
+      return prev.filter(r => r.id !== reelId);
+    });
+    setCurrentUser(prev => ({ ...prev, postsCount: Math.max(0, prev.postsCount - 1) }));
+
+    if (db) {
+      try {
+        await deleteDoc(doc(db, 'reels', reelId));
+        await updateDoc(doc(db, 'users', currentUser.id), {
+          postsCount: increment(-1),
+        });
+      } catch (err) {
+        console.error('[Firestore] deleteReel error:', err);
+      }
+    }
+
+    showToast('Reel deleted 🗑️');
+  }, [currentUser.id, showToast]);
+
+  const editReelCaption = useCallback(async (reelId: string, newCaption: string) => {
+    setReels(prev =>
+      prev.map(r => (r.id === reelId ? { ...r, caption: newCaption } : r))
+    );
+
+    if (db) {
+      try {
+        await updateDoc(doc(db, 'reels', reelId), {
+          caption: newCaption,
+        });
+      } catch (err) {
+        console.error('[Firestore] editReelCaption error:', err);
+      }
+    }
+
+    showToast('Reel caption updated! ✨');
+  }, [showToast]);
+
   // Notifications
   const unreadNotifsCount = notifications.filter(n => !n.isRead).length;
 
@@ -2080,6 +2124,8 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         toggleSaveReel,
         incrementReelViews,
         createReel,
+        deleteReel,
+        editReelCaption,
 
         // Create Modal
         isCreateModalOpen,

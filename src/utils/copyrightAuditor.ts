@@ -22,49 +22,49 @@ export const COMMERCIAL_AUDIO_CATALOGUE: CommercialAudioMatch[] = [
     track: 'Kesariya (Acoustic Folk Fusion)',
     artist: 'Pritam & Arijit Singh',
     claimant: 'Sony Music Entertainment India / Dharma Productions',
-    policy: 'Audio muted due to copyright claim',
+    policy: 'Audio attributed to rights holder',
   },
   {
     track: 'Baarishein (Monsoon Chill)',
     artist: 'Anuv Jain',
     claimant: 'Anuv Jain Records / Warner Music India',
-    policy: 'Audio muted due to copyright claim',
+    policy: 'Audio attributed to rights holder',
   },
   {
     track: 'Liggi (Indie Electro Beat)',
     artist: 'Ritviz',
     claimant: 'Ritviz / Bacardi NH7 Records',
-    policy: 'Audio muted due to copyright claim',
+    policy: 'Audio attributed to rights holder',
   },
   {
     track: 'Kasoor (Ukulele Live)',
     artist: 'Prateek Kuhad',
     claimant: 'Elektra Records / IPRS India',
-    policy: 'Audio muted due to copyright claim',
+    policy: 'Audio attributed to rights holder',
   },
   {
     track: 'Aaftaab (Darbari Strings)',
     artist: 'The Local Train',
     claimant: 'Believe Music / The Local Train',
-    policy: 'Audio muted due to copyright claim',
+    policy: 'Audio attributed to rights holder',
   },
   {
     track: 'Chaleya (Jawan Sound)',
     artist: 'Anirudh Ravichander & Arijit Singh',
     claimant: 'T-Series Music India Ltd.',
-    policy: 'Audio muted due to copyright claim',
+    policy: 'Audio attributed to rights holder',
   },
   {
     track: 'Heeriye (Acoustic Duet)',
     artist: 'Jasleen Royal & Arijit Singh',
     claimant: 'Warner Music India',
-    policy: 'Audio muted due to copyright claim',
+    policy: 'Audio attributed to rights holder',
   },
   {
     track: 'Lover (Punjabi Pop)',
     artist: 'Diljit Dosanjh',
     claimant: 'Famous Studios / Diljit Dosanjh',
-    policy: 'Audio muted due to copyright claim',
+    policy: 'Audio attributed to rights holder',
   },
 ];
 
@@ -189,7 +189,7 @@ export function auditMediaContent(options: AuditOptions): CopyrightClaim {
           track: musicTitle || 'Commercial Sound Recording',
           artist: musicArtist || 'Commercial Artist / Label',
           claimant: 'Indian Music Rights Association (IPRS / PPL India)',
-          policy: 'Audio muted due to copyright claim',
+          policy: 'Audio attributed to rights holder',
         };
       }
     }
@@ -264,7 +264,7 @@ export function auditMediaContent(options: AuditOptions): CopyrightClaim {
       audioArtist: matchedAudio.artist,
       audioClaimant: matchedAudio.claimant,
       audioPolicy: matchedAudio.policy,
-      isAudioMuted: true,
+      isAudioMuted: false,
       visualClaimant,
       visualDetails,
       hasVisualWarning: true,
@@ -281,7 +281,7 @@ export function auditMediaContent(options: AuditOptions): CopyrightClaim {
       audioArtist: matchedAudio.artist,
       audioClaimant: matchedAudio.claimant,
       audioPolicy: matchedAudio.policy,
-      isAudioMuted: true,
+      isAudioMuted: false,
       detectedAt: now,
     };
   }

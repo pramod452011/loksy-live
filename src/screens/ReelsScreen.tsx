@@ -20,6 +20,13 @@ import {
   Camera,
   Eye,
   RotateCw,
+  MoreHorizontal,
+  Trash2,
+  Edit3,
+  Copy,
+  AlertCircle,
+  X,
+  EyeOff,
 } from 'lucide-react';
 
 interface ReelCardProps {
@@ -40,16 +47,19 @@ const ReelCard: React.FC<ReelCardProps> = ({
   onDoubleTapLike,
 }) => {
   const {
+    currentUser,
     toggleLikeReel,
     toggleSaveReel,
     toggleFollowUser,
     incrementReelViews,
+    deleteReel,
+    editReelCaption,
     users,
     setViewingUserId,
     setActiveCommentPostId,
     openShareModal,
+    openReportModal,
     showToast,
-    openCopyrightModal,
     openAudioTrackModal,
   } = useApp();
 
@@ -64,6 +74,50 @@ const ReelCard: React.FC<ReelCardProps> = ({
   const singleTapTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   const [progress, setProgress] = useState(0);
   const hasIncrementedViewRef = useRef(false);
+
+  // Reel action sheet, edit, delete & expand states
+  const isOwner = currentUser?.id === reel.userId || currentUser?.id === reel.user?.id;
+  const [showActionSheet, setShowActionSheet] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
+  const [editCaptionText, setEditCaptionText] = useState(reel.caption);
+  const [isCaptionExpanded, setIsCaptionExpanded] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [isSavingCaption, setIsSavingCaption] = useState(false);
+  const [isHiddenByViewer, setIsHiddenByViewer] = useState(false);
+
+  // Keep local editCaptionText synced if reel caption changes
+  useEffect(() => {
+    setEditCaptionText(reel.caption);
+  }, [reel.caption]);
+
+  const handleDeleteReel = async () => {
+    try {
+      setIsDeleting(true);
+      await deleteReel(reel.id);
+      setShowDeleteConfirm(false);
+      setShowActionSheet(false);
+    } catch (err) {
+      console.error('Failed to delete reel:', err);
+      showToast('Could not delete reel');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
+
+  const handleSaveCaption = async () => {
+    try {
+      setIsSavingCaption(true);
+      await editReelCaption(reel.id, editCaptionText);
+      setShowEditModal(false);
+      setShowActionSheet(false);
+    } catch (err) {
+      console.error('Failed to update caption:', err);
+      showToast('Could not update caption');
+    } finally {
+      setIsSavingCaption(false);
+    }
+  };
 
   // Music loop & seek boundaries
   const handleMusicTimeUpdate = () => {
@@ -129,7 +183,7 @@ const ReelCard: React.FC<ReelCardProps> = ({
       video.currentTime = 0;
       video.muted = isMuted;
 
-      if (!isMuted && !reel.copyrightClaim?.isAudioMuted) {
+      if (!isMuted) {
         const origVol = ((reel.originalVolume ?? reel.music?.originalVolume ?? 100) / 100);
         const musVol = ((reel.musicVolume ?? reel.music?.musicVolume ?? 85) / 100);
         const startSec = reel.audioStartTime ?? reel.music?.audioStartTime ?? 0;
@@ -172,7 +226,7 @@ const ReelCard: React.FC<ReelCardProps> = ({
       setProgress(0);
       soundManager.stopSoundtrack();
     }
-  }, [isActive, isMuted, reel.musicTitle, reel.music?.audioUrl, reel.copyrightClaim?.isAudioMuted]);
+  }, [isActive, isMuted, reel.musicTitle, reel.music?.audioUrl, reel.originalVolume, reel.musicVolume, reel.audioStartTime]);
 
   // Sync mute state and volume directly to video element whenever isMuted changes
   useEffect(() => {
@@ -180,17 +234,6 @@ const ReelCard: React.FC<ReelCardProps> = ({
     const musicAudio = musicAudioRef.current;
 
     if (video) {
-      if (reel.copyrightClaim?.isAudioMuted) {
-        video.muted = true;
-        video.volume = 0;
-        if (musicAudio) {
-          musicAudio.muted = true;
-          musicAudio.pause();
-        }
-        soundManager.setMuted(true);
-        return;
-      }
-
       video.muted = isMuted;
       if (musicAudio) {
         musicAudio.muted = isMuted;
@@ -219,22 +262,12 @@ const ReelCard: React.FC<ReelCardProps> = ({
         soundManager.setMuted(true);
       }
     }
-  }, [isMuted, isActive, reel.musicTitle, reel.music?.audioUrl, reel.copyrightClaim?.isAudioMuted]);
+  }, [isMuted, isActive, reel.musicTitle, reel.music?.audioUrl, reel.originalVolume, reel.musicVolume]);
 
   // When video data is ready (especially for newly uploaded video blob URLs), ensure proper playback
   const handleCanPlay = () => {
     const video = videoRef.current;
     if (video && isActive) {
-      if (reel.copyrightClaim?.isAudioMuted) {
-        video.muted = true;
-        video.volume = 0;
-        soundManager.setMuted(true);
-        if (video.paused) {
-          video.play().then(() => setIsPlaying(true)).catch(() => {});
-        }
-        return;
-      }
-
       video.muted = isMuted;
       if (!isMuted) {
         const origVol = ((reel.originalVolume ?? reel.music?.originalVolume ?? 100) / 100);
@@ -255,21 +288,6 @@ const ReelCard: React.FC<ReelCardProps> = ({
     e.stopPropagation();
     e.preventDefault();
     const video = videoRef.current;
-
-    // Strict Copyright check for flagged commercial audio
-    if (reel.copyrightClaim?.isAudioMuted) {
-      if (video) {
-        video.muted = true;
-        video.volume = 0;
-      }
-      soundManager.setMuted(true);
-      onToggleMute(true);
-      setShowAudioBadge(true);
-      setTimeout(() => setShowAudioBadge(false), 1200);
-      showToast('Audio muted due to copyright claim. Tap details to review match or replace audio.');
-      return;
-    }
-
     const nextMuted = !isMuted;
 
     if (video) {
@@ -293,7 +311,7 @@ const ReelCard: React.FC<ReelCardProps> = ({
     onToggleMute(nextMuted);
     setShowAudioBadge(true);
     setTimeout(() => setShowAudioBadge(false), 1200);
-    showToast(nextMuted ? 'Muted 🔇' : 'Sound on 🔊');
+    showToast(nextMuted ? 'Muted 🔇' : 'Sound turned on 🔊');
   };
 
   // Track playback progress
@@ -502,64 +520,52 @@ const ReelCard: React.FC<ReelCardProps> = ({
         </div>
       )}
 
-      {/* Background Content ID Audit Scanning Badge */}
-      {reel.copyrightClaim?.status === 'scanning' && (
-        <div className="absolute top-16 left-4 z-30 pointer-events-auto no-reel-tap">
-          <div
-            id={`reel-scanning-badge-${reel.id}`}
-            onClick={(e) => {
-              e.stopPropagation();
-              showToast('Content ID scan in progress: Auditing reel audio against rights database...');
-            }}
-            className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-black/85 backdrop-blur-md border border-cyan-400/40 text-[#00E5FF] text-xs font-semibold shadow-xl shadow-black/70 animate-pulse cursor-pointer select-none"
-          >
-            <RotateCw className="w-3.5 h-3.5 text-[#00E5FF] animate-spin" />
-            <span>Auditing Content ID...</span>
-          </div>
-        </div>
-      )}
-
       {/* Visible Floating Speaker / Mute Button on top of each reel */}
-      <div className="absolute top-16 right-4 z-30 pointer-events-auto no-reel-tap">
+      <div className="absolute top-14 right-4 z-30 pointer-events-auto no-reel-tap">
         <button
           id={`reel-mute-btn-${reel.id}`}
           type="button"
           onClick={handleToggleMute}
-          className={`group flex items-center gap-2 px-3.5 py-2 rounded-full backdrop-blur-md border shadow-2xl active:scale-95 transition-all select-none ${
-            isMuted
-              ? 'bg-black/75 hover:bg-black/90 text-white border-white/20 hover:border-white/40 shadow-black/60'
-              : 'bg-black/85 hover:bg-black text-[#00E5FF] border-[#00E5FF]/50 shadow-[#00E5FF]/25'
-          }`}
-          title={isMuted ? 'Tap to unmute reel sound' : 'Tap to mute reel sound'}
+          className="w-8 h-8 rounded-full bg-black/60 hover:bg-black/80 backdrop-blur-md border border-white/20 flex items-center justify-center text-white active:scale-90 transition-all select-none shadow-lg"
+          title={isMuted ? 'Sound Off (tap to unmute)' : 'Sound On (tap to mute)'}
           aria-label={isMuted ? 'Unmute reel sound' : 'Mute reel sound'}
         >
           {isMuted ? (
-            <>
-              <VolumeX className="w-4 h-4 text-[#FF4668] group-hover:scale-110 transition-transform shrink-0" />
-              <span className="text-xs font-bold text-white tracking-wide">Sound Off</span>
-            </>
+            <VolumeX className="w-4 h-4 text-white/90" />
           ) : (
-            <>
-              <Volume2 className="w-4 h-4 text-[#00E5FF] group-hover:scale-110 transition-transform shrink-0 animate-pulse" />
-              <span className="text-xs font-bold text-[#00E5FF] tracking-wide">Sound On</span>
-              <div className="flex items-end gap-0.5 h-3 ml-0.5">
-                <span className="w-0.5 h-3 bg-[#00E5FF] rounded-full animate-pulse" />
-                <span className="w-0.5 h-1.5 bg-[#00E5FF] rounded-full animate-pulse delay-75" />
-                <span className="w-0.5 h-2.5 bg-[#00E5FF] rounded-full animate-pulse delay-150" />
-              </div>
-            </>
+            <Volume2 className="w-4 h-4 text-white" />
           )}
         </button>
       </div>
 
-      {/* Bottom Content Area: User info, caption, marquee track + Right Stack */}
-      <div className="absolute bottom-0 left-0 right-0 z-20 p-4 pb-20 md:pb-6 flex items-end justify-between gap-4 pointer-events-none">
-        {/* Left Information Stack */}
-        <div className="flex-1 space-y-2.5 max-w-[76%] pointer-events-auto no-reel-tap">
+      {/* If hidden by viewer */}
+      {isHiddenByViewer ? (
+        <div className="absolute inset-0 z-30 flex flex-col items-center justify-center bg-black/90 p-6 text-center">
+          <EyeOff className="w-12 h-12 text-gray-500 mb-3" />
+          <h4 className="text-white font-bold text-sm mb-1">Reel Hidden</h4>
+          <p className="text-xs text-gray-400 mb-4 max-w-xs">
+            We will show fewer reels like this in your feed.
+          </p>
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsHiddenByViewer(false);
+            }}
+            className="px-4 py-1.5 rounded-full border border-white/30 text-white text-xs font-semibold hover:bg-white/10 transition-colors"
+          >
+            Undo
+          </button>
+        </div>
+      ) : null}
+
+      {/* Bottom Content Area: Exact Instagram Layout (Bottom info & Right compact buttons) */}
+      <div className="absolute bottom-0 left-0 right-0 z-20 p-3.5 pb-20 md:pb-6 flex items-end justify-between gap-3 pointer-events-none">
+        {/* Left Bottom Information Stack: Creator Info, Caption & Audio Ticker */}
+        <div className="flex-1 space-y-2 max-w-[calc(100%-4.25rem)] pointer-events-auto no-reel-tap pr-1">
           {/* Creator Pill with Follow button */}
-          <div className="flex items-center gap-2.5 flex-wrap">
+          <div className="flex items-center gap-2 flex-wrap">
             <div
-              className="w-10 h-10 rounded-full p-[1.5px] bg-gradient-to-tr from-[#FF4668] via-[#FF8A00] to-[#E040FB] cursor-pointer shrink-0 hover:scale-105 transition-transform"
+              className="w-9 h-9 rounded-full p-[1.5px] bg-gradient-to-tr from-[#FF4668] via-[#FF8A00] to-[#E040FB] cursor-pointer shrink-0 hover:scale-105 transition-transform"
               onClick={() => setViewingUserId(reel.userId)}
             >
               <img
@@ -575,41 +581,39 @@ const ReelCard: React.FC<ReelCardProps> = ({
               onClick={() => setViewingUserId(reel.userId)}
             >
               <div className="flex items-center gap-1.5">
-                <span className="font-bold text-white text-sm truncate hover:underline">
-                  {reel.user.name}
+                <span className="font-bold text-white text-sm truncate hover:underline drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+                  {reel.user.username}
                 </span>
                 {reel.user.isVerified && (
-                  <Sparkles className="w-3.5 h-3.5 text-[#FFA000] shrink-0" />
+                  <Sparkles className="w-3.5 h-3.5 text-[#FFA000] shrink-0 drop-shadow-md" />
                 )}
               </div>
-              <span className="text-xs text-gray-300 block">@{reel.user.username}</span>
             </div>
 
-            {/* Creator Follow Button */}
-            <button
-              id={`reel-follow-btn-${reel.id}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                toggleFollowUser(reel.userId);
-              }}
-              className={`ml-1 px-3 py-1 rounded-full text-xs font-bold backdrop-blur-md active:scale-95 transition-all flex items-center gap-1 border ${
-                isFollowingCreator
-                  ? 'bg-white/10 text-gray-200 border-white/20 hover:bg-white/20'
-                  : 'bg-gradient-to-r from-[#FF4668] to-[#FF8A00] text-white border-transparent shadow-md shadow-[#FF4668]/30 hover:opacity-95'
-              }`}
-            >
-              {isFollowingCreator ? (
-                <>
-                  <Check className="w-3 h-3 text-[#00E5FF]" />
-                  <span>Following</span>
-                </>
-              ) : (
-                <>
-                  <UserPlus className="w-3 h-3" />
+            {/* Creator Follow Button (if not own reel) */}
+            {!isOwner && (
+              <button
+                id={`reel-follow-btn-${reel.id}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  toggleFollowUser(reel.userId);
+                }}
+                className={`ml-1 px-3 py-1 rounded-lg text-xs font-semibold backdrop-blur-md active:scale-95 transition-all flex items-center gap-1 border ${
+                  isFollowingCreator
+                    ? 'bg-white/15 text-white border-white/20 hover:bg-white/25'
+                    : 'bg-white/10 hover:bg-white/20 text-white border-white/40 shadow-sm'
+                }`}
+              >
+                {isFollowingCreator ? (
+                  <>
+                    <Check className="w-3 h-3 text-[#00E5FF]" />
+                    <span>Following</span>
+                  </>
+                ) : (
                   <span>Follow</span>
-                </>
-              )}
-            </button>
+                )}
+              </button>
+            )}
 
             {reel.isAiGenerated && (
               <span
@@ -627,49 +631,41 @@ const ReelCard: React.FC<ReelCardProps> = ({
             )}
           </div>
 
-          {/* Reel Views Count (e.g. '12.4K views') */}
-          <div
-            id={`reel-view-count-${reel.id}`}
-            className="flex items-center gap-1.5 text-xs font-semibold text-[#00E5FF] bg-black/60 backdrop-blur-md px-2.5 py-1 rounded-full border border-cyan-500/30 w-fit shadow-md"
-          >
-            <Eye className="w-3.5 h-3.5 text-[#00E5FF]" />
-            <span>{formatViewCount(reel.viewsCount)}</span>
+          {/* Instagram Caption with inline more / less toggle */}
+          <div className="text-xs md:text-sm text-white drop-shadow-[0_1px_3px_rgba(0,0,0,0.9)] leading-relaxed font-normal">
+            <span
+              className="font-bold mr-1.5 cursor-pointer hover:underline inline"
+              onClick={() => setViewingUserId(reel.userId)}
+            >
+              {reel.user.username}
+            </span>
+            <span className="inline">
+              {isCaptionExpanded
+                ? reel.caption
+                : reel.caption.length > 70
+                ? `${reel.caption.slice(0, 70)}...`
+                : reel.caption}
+            </span>
+            {reel.caption.length > 70 && (
+              <button
+                id={`reel-caption-expand-btn-${reel.id}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsCaptionExpanded(!isCaptionExpanded);
+                }}
+                className="ml-1.5 text-gray-300 font-semibold hover:text-white transition-colors"
+              >
+                {isCaptionExpanded ? 'less' : 'more'}
+              </button>
+            )}
+            <span className="text-[11px] text-gray-300/90 ml-2 font-medium">
+              • {formatViewCount(reel.viewsCount)}
+            </span>
           </div>
 
-          {/* Caption with Tag Highlights */}
-          <p className="text-xs md:text-sm text-white leading-relaxed line-clamp-2 drop-shadow-[0_1px_3px_rgba(0,0,0,0.8)] font-medium">
-            {reel.caption}
-          </p>
-
-          {/* Instagram-style Clean Muted Notice Banner Over Reel */}
-          {reel.copyrightClaim?.isAudioMuted && (
-            <div
-              id={`reel-copyright-muted-banner-${reel.id}`}
-              onClick={(e) => {
-                e.stopPropagation();
-                openCopyrightModal(reel.copyrightClaim!, {
-                  type: 'reel',
-                  id: reel.id,
-                  title: reel.musicTitle || reel.copyrightClaim?.audioTrack,
-                  artist: reel.musicArtist || reel.copyrightClaim?.audioArtist,
-                });
-              }}
-              className="flex items-center gap-2 text-xs text-white bg-black/85 hover:bg-black backdrop-blur-md border border-white/25 px-3.5 py-1.5 rounded-full w-fit max-w-full shadow-2xl cursor-pointer active:scale-95 transition-all select-none no-reel-tap"
-              title="Audio muted due to copyright claim. Click for details."
-            >
-              <VolumeX className="w-3.5 h-3.5 text-[#FF4668] shrink-0" />
-              <span className="text-[11px] font-medium text-gray-200 truncate">
-                Audio muted due to copyright claim
-              </span>
-              <span className="text-[11px] font-bold text-[#00E5FF] underline shrink-0 ml-1">
-                Details
-              </span>
-            </div>
-          )}
-
-          {/* Audio Track with Smooth CSS Marquee & Instagram Audio Page Link */}
+          {/* Audio Ticker: Instagram-style Music Marquee */}
           <div
-            id={`reel-audio-pill-${reel.id}`}
+            id={`reel-audio-ticker-${reel.id}`}
             onClick={(e) => {
               e.stopPropagation();
               const trackToOpen: MusicTrack = reel.music || {
@@ -684,24 +680,24 @@ const ReelCard: React.FC<ReelCardProps> = ({
               };
               openAudioTrackModal(trackToOpen);
             }}
-            className="flex items-center gap-2 text-xs text-gray-200 bg-black/50 hover:bg-black/80 backdrop-blur-md border border-white/15 hover:border-[#00E5FF]/50 px-3 py-1.5 rounded-full w-fit max-w-full overflow-hidden shadow-md cursor-pointer select-none group transition-colors"
+            className="flex items-center gap-1.5 text-xs text-white/95 hover:text-white cursor-pointer select-none group w-fit max-w-full drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)] pt-0.5"
             title="Tap to view audio page and use this sound"
           >
-            <Music className="w-3.5 h-3.5 text-[#00E5FF] shrink-0 group-hover:scale-110 transition-transform" />
-            <div className="w-48 sm:w-60 overflow-hidden relative">
-              <div className="animate-marquee inline-flex gap-8 whitespace-nowrap text-[11px] font-medium tracking-wide">
-                <span>{reel.music?.title || reel.musicTitle} • {reel.music?.artist || reel.musicArtist}</span>
-                <span>🎵 Tap to Use Audio • {reel.music?.title || reel.musicTitle}</span>
-                <span>{reel.music?.title || reel.musicTitle} • {reel.music?.artist || reel.musicArtist}</span>
-                <span>🎵 Tap to Use Audio • {reel.music?.title || reel.musicTitle}</span>
+            <Music className="w-3.5 h-3.5 text-white shrink-0 group-hover:scale-110 transition-transform drop-shadow" />
+            <div className="w-48 sm:w-56 overflow-hidden relative">
+              <div className="animate-marquee inline-flex gap-6 whitespace-nowrap text-[11px] font-medium tracking-wide">
+                <span>{reel.music?.title || reel.musicTitle || 'Original Audio'} • {reel.music?.artist || reel.musicArtist || reel.user.name}</span>
+                <span>• Original audio</span>
+                <span>{reel.music?.title || reel.musicTitle || 'Original Audio'} • {reel.music?.artist || reel.musicArtist || reel.user.name}</span>
+                <span>• Original audio</span>
               </div>
             </div>
           </div>
         </div>
 
-        {/* Right Floating Actions Stack */}
-        <div className="flex flex-col items-center gap-4 shrink-0 pointer-events-auto no-reel-tap">
-          {/* Like Button */}
+        {/* Right Floating Actions Stack: Compact 20px buttons (Heart, Comment, Share, Save, three-dots ..., spinning audio disc) */}
+        <div className="flex flex-col items-center gap-4.5 shrink-0 pointer-events-auto no-reel-tap mb-1">
+          {/* 1. Heart (Like) Button */}
           <button
             id={`reel-like-btn-${reel.id}`}
             onClick={(e) => {
@@ -711,25 +707,17 @@ const ReelCard: React.FC<ReelCardProps> = ({
             className="flex flex-col items-center group active:scale-125 transition-transform"
             aria-label={reel.isLiked ? 'Unlike reel' : 'Like reel'}
           >
-            <div
-              className={`p-3 rounded-full backdrop-blur-md border transition-all ${
-                reel.isLiked
-                  ? 'bg-[#FF4668] text-white border-[#FF4668] shadow-lg shadow-[#FF4668]/50 scale-110'
-                  : 'bg-black/50 text-white border-white/15 hover:bg-black/70'
+            <Heart
+              className={`w-[24px] h-[24px] drop-shadow-[0_2px_4px_rgba(0,0,0,0.85)] transition-all ${
+                reel.isLiked ? 'fill-[#FF3040] text-[#FF3040] scale-110' : 'text-white'
               }`}
-            >
-              <Heart
-                className={`w-6 h-6 transition-transform group-hover:scale-110 ${
-                  reel.isLiked ? 'fill-white text-white' : 'text-white'
-                }`}
-              />
-            </div>
-            <span className="text-[11px] font-bold text-white mt-1 drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+            />
+            <span className="text-[12px] font-semibold text-white mt-1 drop-shadow-[0_1px_2px_rgba(0,0,0,0.95)]">
               {reel.likesCount.toLocaleString()}
             </span>
           </button>
 
-          {/* Comment Button */}
+          {/* 2. Comment Button */}
           <button
             id={`reel-comment-btn-${reel.id}`}
             onClick={(e) => {
@@ -739,15 +727,13 @@ const ReelCard: React.FC<ReelCardProps> = ({
             className="flex flex-col items-center group active:scale-95 transition-transform"
             aria-label="View comments"
           >
-            <div className="p-3 rounded-full bg-black/50 backdrop-blur-md border border-white/15 text-white hover:bg-black/70 transition-all">
-              <MessageCircle className="w-6 h-6 group-hover:scale-110 transition-transform text-white" />
-            </div>
-            <span className="text-[11px] font-bold text-white mt-1 drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+            <MessageCircle className="w-[24px] h-[24px] text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.85)] group-hover:scale-105 transition-transform" />
+            <span className="text-[12px] font-semibold text-white mt-1 drop-shadow-[0_1px_2px_rgba(0,0,0,0.95)]">
               {reel.commentsCount.toLocaleString()}
             </span>
           </button>
 
-          {/* Share Button */}
+          {/* 3. Share Button */}
           <button
             id={`reel-share-btn-${reel.id}`}
             onClick={(e) => {
@@ -761,15 +747,13 @@ const ReelCard: React.FC<ReelCardProps> = ({
             className="flex flex-col items-center group active:scale-95 transition-transform"
             aria-label="Share reel"
           >
-            <div className="p-3 rounded-full bg-black/50 backdrop-blur-md border border-white/15 text-white hover:bg-black/70 transition-all">
-              <Share2 className="w-6 h-6 group-hover:scale-110 transition-transform text-white" />
-            </div>
-            <span className="text-[11px] font-bold text-white mt-1 drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
+            <Share2 className="w-[24px] h-[24px] text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.85)] group-hover:scale-105 transition-transform" />
+            <span className="text-[12px] font-semibold text-white mt-1 drop-shadow-[0_1px_2px_rgba(0,0,0,0.95)]">
               {reel.sharesCount.toLocaleString()}
             </span>
           </button>
 
-          {/* Save / Bookmark Button */}
+          {/* 4. Save / Bookmark Button */}
           <button
             id={`reel-save-btn-${reel.id}`}
             onClick={(e) => {
@@ -780,39 +764,28 @@ const ReelCard: React.FC<ReelCardProps> = ({
             className="flex flex-col items-center group active:scale-125 transition-transform"
             aria-label={reel.isSaved ? 'Unsave reel' : 'Save reel'}
           >
-            <div
-              className={`p-3 rounded-full backdrop-blur-md border transition-all ${
-                reel.isSaved
-                  ? 'bg-[#00E5FF] text-[#070A12] border-[#00E5FF] shadow-lg shadow-[#00E5FF]/40'
-                  : 'bg-black/50 text-white border-white/15 hover:bg-black/70'
+            <Bookmark
+              className={`w-[24px] h-[24px] drop-shadow-[0_2px_4px_rgba(0,0,0,0.85)] transition-all ${
+                reel.isSaved ? 'fill-white text-white' : 'text-white'
               }`}
-            >
-              <Bookmark
-                className={`w-6 h-6 transition-transform group-hover:scale-110 ${
-                  reel.isSaved ? 'fill-[#070A12] text-[#070A12]' : 'text-white'
-                }`}
-              />
-            </div>
-            <span className="text-[10px] font-bold text-white mt-1 drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
-              {reel.isSaved ? 'Saved' : 'Save'}
-            </span>
+            />
           </button>
 
-          {/* Views Metric */}
-          <div
-            id={`reel-views-metric-${reel.id}`}
-            className="flex flex-col items-center"
-            title={`${reel.viewsCount ?? 0} views`}
+          {/* 5. Three-dots (...) More Options Button */}
+          <button
+            id={`reel-more-btn-${reel.id}`}
+            onClick={(e) => {
+              e.stopPropagation();
+              setShowActionSheet(true);
+            }}
+            className="flex flex-col items-center group p-0.5 text-white active:scale-90 transition-transform"
+            aria-label="More options"
+            title="More options"
           >
-            <div className="p-3 rounded-full bg-black/50 backdrop-blur-md border border-cyan-500/25 text-[#00E5FF]">
-              <Eye className="w-6 h-6 text-[#00E5FF]" />
-            </div>
-            <span className="text-[10px] font-bold text-[#00E5FF] mt-1 drop-shadow-[0_1px_2px_rgba(0,0,0,0.9)]">
-              {formatViewCount(reel.viewsCount).replace(' views', '')}
-            </span>
-          </div>
+            <MoreHorizontal className="w-[24px] h-[24px] text-white drop-shadow-[0_2px_4px_rgba(0,0,0,0.85)]" />
+          </button>
 
-          {/* Spinning Audio Album Disc (Instagram style audio navigation) */}
+          {/* 6. Spinning Audio Album Disc (Compact Instagram style) */}
           <div
             id={`reel-music-disc-${reel.id}`}
             onClick={(e) => {
@@ -829,23 +802,271 @@ const ReelCard: React.FC<ReelCardProps> = ({
               };
               openAudioTrackModal(trackToOpen);
             }}
-            className={`w-10 h-10 rounded-full bg-black p-1 border-2 border-white/40 shadow-2xl mt-1 cursor-pointer hover:scale-110 active:scale-95 transition-transform ${
+            className={`w-8 h-8 rounded-full bg-black p-[2px] border-2 border-white/60 shadow-2xl mt-0.5 cursor-pointer hover:scale-110 active:scale-95 transition-transform ${
               isActive && isPlaying ? 'animate-spin' : ''
             }`}
-            style={{ animationDuration: '4s' }}
-            title="Tap to see track page and use this audio"
+            style={{ animationDuration: '3.5s' }}
+            title="Tap to see audio page"
           >
-            <div className="w-full h-full rounded-full overflow-hidden bg-gradient-to-tr from-[#FF4668] via-[#FF8A00] to-[#00E5FF] flex items-center justify-center">
+            <div className="w-full h-full rounded-full overflow-hidden bg-neutral-900 flex items-center justify-center">
               <img
                 src={reel.music?.coverUrl || reel.user.avatar}
                 alt="music disc"
-                className="w-full h-full object-cover opacity-85"
+                className="w-full h-full object-cover"
                 referrerPolicy="no-referrer"
               />
             </div>
           </div>
         </div>
       </div>
+
+      {/* Instagram-style Three-dots Action Sheet Modal */}
+      {showActionSheet && (
+        <div
+          id={`reel-action-sheet-backdrop-${reel.id}`}
+          className="fixed inset-0 z-50 bg-black/75 backdrop-blur-sm flex items-end md:items-center justify-center p-0 md:p-4 no-reel-tap animate-fadeIn"
+          onClick={(e) => {
+            e.stopPropagation();
+            setShowActionSheet(false);
+          }}
+        >
+          <div
+            id={`reel-action-sheet-${reel.id}`}
+            className="w-full max-w-sm bg-[#262626] text-white rounded-t-3xl md:rounded-2xl overflow-hidden border border-white/10 shadow-2xl divide-y divide-white/10 animate-slideUp"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Grab Handle for mobile */}
+            <div className="py-2.5 flex justify-center md:hidden bg-transparent">
+              <div className="w-10 h-1 bg-white/30 rounded-full" />
+            </div>
+
+            {/* Owner Actions */}
+            {isOwner ? (
+              <>
+                <button
+                  id={`reel-action-delete-${reel.id}`}
+                  onClick={() => setShowDeleteConfirm(true)}
+                  className="w-full py-3.5 px-4 text-center text-sm font-bold text-red-500 hover:bg-white/5 active:bg-red-500/10 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>Delete Reel</span>
+                </button>
+                <button
+                  id={`reel-action-edit-${reel.id}`}
+                  onClick={() => {
+                    setEditCaptionText(reel.caption);
+                    setShowEditModal(true);
+                  }}
+                  className="w-full py-3.5 px-4 text-center text-sm font-medium text-white hover:bg-white/5 active:bg-white/10 transition-colors flex items-center justify-center gap-2"
+                >
+                  <Edit3 className="w-4 h-4" />
+                  <span>Edit Caption</span>
+                </button>
+              </>
+            ) : (
+              /* Viewer Actions */
+              <>
+                <button
+                  id={`reel-action-report-${reel.id}`}
+                  onClick={() => {
+                    setShowActionSheet(false);
+                    openReportModal(reel.id, 'reel');
+                  }}
+                  className="w-full py-3.5 px-4 text-center text-sm font-bold text-red-500 hover:bg-white/5 active:bg-red-500/10 transition-colors flex items-center justify-center gap-2"
+                >
+                  <AlertCircle className="w-4 h-4" />
+                  <span>Report</span>
+                </button>
+                <button
+                  id={`reel-action-not-interested-${reel.id}`}
+                  onClick={() => {
+                    setShowActionSheet(false);
+                    setIsHiddenByViewer(true);
+                    showToast('Reel hidden from your feed');
+                  }}
+                  className="w-full py-3.5 px-4 text-center text-sm font-medium text-white hover:bg-white/5 active:bg-white/10 transition-colors flex items-center justify-center gap-2"
+                >
+                  <EyeOff className="w-4 h-4" />
+                  <span>Not Interested</span>
+                </button>
+              </>
+            )}
+
+            {/* Common Actions */}
+            <button
+              id={`reel-action-save-${reel.id}`}
+              onClick={() => {
+                toggleSaveReel(reel.id);
+                setShowActionSheet(false);
+                showToast(reel.isSaved ? 'Removed from saved' : 'Saved to collection! 🔖');
+              }}
+              className="w-full py-3.5 px-4 text-center text-sm font-medium text-white hover:bg-white/5 active:bg-white/10 transition-colors flex items-center justify-center gap-2"
+            >
+              <Bookmark className="w-4 h-4" />
+              <span>{reel.isSaved ? 'Remove from Saved' : 'Save Reel'}</span>
+            </button>
+
+            <button
+              id={`reel-action-audio-${reel.id}`}
+              onClick={() => {
+                setShowActionSheet(false);
+                const trackToOpen: MusicTrack = reel.music || {
+                  id: `track_reel_${reel.id}`,
+                  title: reel.musicTitle || 'Original Audio',
+                  artist: reel.musicArtist || reel.user.name,
+                  album: 'LOKSY Reels',
+                  audioUrl: reel.music?.audioUrl || '',
+                  coverUrl: reel.thumbnailUrl || reel.user.avatar,
+                  duration: 30,
+                  category: 'Trending',
+                };
+                openAudioTrackModal(trackToOpen);
+              }}
+              className="w-full py-3.5 px-4 text-center text-sm font-medium text-white hover:bg-white/5 active:bg-white/10 transition-colors flex items-center justify-center gap-2"
+            >
+              <Music className="w-4 h-4" />
+              <span>Use Audio</span>
+            </button>
+
+            <button
+              id={`reel-action-copy-link-${reel.id}`}
+              onClick={() => {
+                navigator.clipboard.writeText(`${window.location.origin}/#reel_${reel.id}`);
+                showToast('Link copied to clipboard! 📋');
+                setShowActionSheet(false);
+              }}
+              className="w-full py-3.5 px-4 text-center text-sm font-medium text-white hover:bg-white/5 active:bg-white/10 transition-colors flex items-center justify-center gap-2"
+            >
+              <Copy className="w-4 h-4" />
+              <span>Copy Link</span>
+            </button>
+
+            <button
+              id={`reel-action-share-${reel.id}`}
+              onClick={() => {
+                setShowActionSheet(false);
+                openShareModal({
+                  title: `Reel by ${reel.user.name} on LOKSY`,
+                  url: `${window.location.origin}/#reel_${reel.id}`,
+                  image: reel.thumbnailUrl,
+                });
+              }}
+              className="w-full py-3.5 px-4 text-center text-sm font-medium text-white hover:bg-white/5 active:bg-white/10 transition-colors flex items-center justify-center gap-2"
+            >
+              <Share2 className="w-4 h-4" />
+              <span>Share to...</span>
+            </button>
+
+            <button
+              id={`reel-action-cancel-${reel.id}`}
+              onClick={() => setShowActionSheet(false)}
+              className="w-full py-3.5 px-4 text-center text-sm font-semibold text-gray-400 hover:bg-white/5 active:bg-white/10 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Caption Modal for Owner */}
+      {showEditModal && (
+        <div
+          id={`reel-edit-modal-backdrop-${reel.id}`}
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 no-reel-tap animate-fadeIn"
+          onClick={() => setShowEditModal(false)}
+        >
+          <div
+            id={`reel-edit-modal-${reel.id}`}
+            className="w-full max-w-md bg-[#1e1e1e] rounded-2xl border border-white/15 overflow-hidden shadow-2xl"
+            onClick={(e) => e.stopPropagation()}
+          >
+            {/* Header */}
+            <div className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+              <button
+                onClick={() => setShowEditModal(false)}
+                className="text-sm font-medium text-gray-400 hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <h3 className="text-sm font-bold text-white">Edit Reel Caption</h3>
+              <button
+                id={`reel-edit-done-btn-${reel.id}`}
+                onClick={handleSaveCaption}
+                disabled={isSavingCaption}
+                className="text-sm font-bold text-[#00E5FF] hover:text-[#00E5FF]/80 disabled:opacity-50 transition-colors"
+              >
+                {isSavingCaption ? 'Saving...' : 'Done'}
+              </button>
+            </div>
+
+            {/* Body with thumbnail preview and textarea */}
+            <div className="p-4 space-y-3">
+              <div className="flex gap-3">
+                <div className="w-16 h-24 rounded-lg overflow-hidden bg-black shrink-0 border border-white/10">
+                  <img
+                    src={reel.thumbnailUrl || reel.user.avatar}
+                    alt="reel preview"
+                    className="w-full h-full object-cover"
+                    referrerPolicy="no-referrer"
+                  />
+                </div>
+                <div className="flex-1 flex flex-col justify-between">
+                  <textarea
+                    id={`reel-edit-caption-input-${reel.id}`}
+                    value={editCaptionText}
+                    onChange={(e) => setEditCaptionText(e.target.value)}
+                    placeholder="Write a caption..."
+                    rows={4}
+                    maxLength={2200}
+                    className="w-full bg-transparent text-sm text-white placeholder-gray-500 resize-none focus:outline-none"
+                    autoFocus
+                  />
+                  <div className="text-right text-[11px] text-gray-500">
+                    {editCaptionText.length} / 2,200
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Confirmation Modal for Owner */}
+      {showDeleteConfirm && (
+        <div
+          id={`reel-delete-confirm-backdrop-${reel.id}`}
+          className="fixed inset-0 z-50 bg-black/80 backdrop-blur-md flex items-center justify-center p-4 no-reel-tap animate-fadeIn"
+          onClick={() => setShowDeleteConfirm(false)}
+        >
+          <div
+            id={`reel-delete-confirm-dialog-${reel.id}`}
+            className="w-full max-w-xs bg-[#262626] rounded-2xl border border-white/10 overflow-hidden shadow-2xl text-center divide-y divide-white/10"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="p-5">
+              <h4 className="text-base font-bold text-white mb-1.5">Delete Reel?</h4>
+              <p className="text-xs text-gray-400 leading-relaxed">
+                If you delete this reel, you won't be able to restore it. Are you sure?
+              </p>
+            </div>
+            <button
+              id={`reel-confirm-delete-btn-${reel.id}`}
+              onClick={handleDeleteReel}
+              disabled={isDeleting}
+              className="w-full py-3.5 text-sm font-bold text-red-500 hover:bg-white/5 active:bg-red-500/10 transition-colors disabled:opacity-50"
+            >
+              {isDeleting ? 'Deleting...' : 'Delete'}
+            </button>
+            <button
+              id={`reel-cancel-delete-btn-${reel.id}`}
+              onClick={() => setShowDeleteConfirm(false)}
+              className="w-full py-3.5 text-sm font-medium text-white hover:bg-white/5 active:bg-white/10 transition-colors"
+            >
+              Cancel
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

@@ -52,8 +52,8 @@ export const MusicTrimmerMixer: React.FC<MusicTrimmerMixerProps> = ({
   const [activePreset, setActivePreset] = useState<string | null>('balanced');
   const scrubTimeoutRef = useRef<number | null>(null);
 
-  // Total assumed track duration for scrubber calculation (default 60s if not specified)
-  const totalDuration = track.duration && track.duration > 30 ? track.duration : 60;
+  // Total assumed track duration for scrubber calculation (default 120s if not specified)
+  const totalDuration = track.duration && track.duration > 90 ? track.duration : 120;
   const maxStartTime = Math.max(0, totalDuration - clipDuration);
 
   // Generate 48 realistic visual waveform bar heights based on track id & index
@@ -202,40 +202,27 @@ export const MusicTrimmerMixer: React.FC<MusicTrimmerMixerProps> = ({
             </span>
           </div>
 
-          {/* Clip Length Toggle: 15-sec vs 30-sec */}
-          <div className="flex items-center bg-white/5 p-0.5 rounded-lg border border-white/10">
-            <button
-              type="button"
-              onClick={() => {
-                onChangeClipDuration(15);
-                if (audioStartTime > totalDuration - 15) {
-                  onChangeStartTime(totalDuration - 15);
-                }
-              }}
-              className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold transition-all ${
-                clipDuration === 15
-                  ? 'bg-gradient-to-r from-[#FF4668] to-[#FF8A00] text-white shadow-sm'
-                  : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              15s clip
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                onChangeClipDuration(30);
-                if (audioStartTime > totalDuration - 30) {
-                  onChangeStartTime(totalDuration - 30);
-                }
-              }}
-              className={`px-2.5 py-0.5 rounded-md text-[10px] font-bold transition-all ${
-                clipDuration === 30
-                  ? 'bg-gradient-to-r from-[#FF4668] to-[#FF8A00] text-white shadow-sm'
-                  : 'text-gray-400 hover:text-white'
-              }`}
-            >
-              30s clip
-            </button>
+          {/* Clip Length Toggle: 15s, 30s, 60s, 90s (Instagram format) */}
+          <div className="flex items-center bg-white/5 p-0.5 rounded-lg border border-white/10 gap-0.5">
+            {[15, 30, 60, 90].map((dur) => (
+              <button
+                key={dur}
+                type="button"
+                onClick={() => {
+                  onChangeClipDuration(dur);
+                  if (audioStartTime > totalDuration - dur) {
+                    onChangeStartTime(Math.max(0, totalDuration - dur));
+                  }
+                }}
+                className={`px-2 py-0.5 rounded-md text-[10px] font-bold transition-all ${
+                  clipDuration === dur
+                    ? 'bg-gradient-to-r from-[#FF4668] to-[#FF8A00] text-white shadow-sm'
+                    : 'text-gray-400 hover:text-white'
+                }`}
+              >
+                {dur}s
+              </button>
+            ))}
           </div>
         </div>
 
