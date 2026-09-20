@@ -74,7 +74,9 @@ export const StoryBar: React.FC = () => {
 
   const myStoryGroup = stories.find((s) => s.userId === currentUser.id);
   const otherStories = stories.filter((s) => s.userId !== currentUser.id);
-  const hasMyStories = Boolean(myStoryGroup && myStoryGroup.stories && myStoryGroup.stories.length > 0);
+  // Bind 'Your Story' ring directly to currentUser stories length > 0
+  const currentUserStoriesCount = (currentUser.stories && currentUser.stories.length) || (myStoryGroup?.stories?.length ?? 0);
+  const hasMyStories = currentUserStoriesCount > 0;
 
   return (
     <div
@@ -94,7 +96,7 @@ export const StoryBar: React.FC = () => {
                   openStoryCamera();
                 }
               }}
-              className={`w-16 h-16 rounded-full p-[2.5px] transition-all duration-200 group-hover:scale-105 active:scale-95 ${
+              className={`w-16 h-16 rounded-full p-[2.5px] transition-all duration-200 group-hover:scale-105 active:scale-95 cursor-pointer ${
                 hasMyStories
                   ? 'bg-gradient-to-tr from-[#FF4668] via-[#FF8A00] to-[#E040FB] shadow-md shadow-[#FF4668]/40 ring-2 ring-[#FF4668]/30'
                   : 'border-2 border-dashed border-gray-600 hover:border-gray-400'

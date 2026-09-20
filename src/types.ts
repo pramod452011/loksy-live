@@ -18,6 +18,7 @@ export interface User {
   isVerified?: boolean;
   isFollowing?: boolean;
   joinedDate?: string;
+  stories?: StoryItem[];
 }
 
 export interface Comment {

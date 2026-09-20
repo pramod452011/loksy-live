@@ -694,6 +694,17 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               return 0;
             });
 
+            const meGroup = mergedList.find((g) => g.userId === currentUser.id);
+            if (meGroup) {
+              setCurrentUser((u) => {
+                const updatedStories = meGroup.stories || [];
+                if (u.stories?.length === updatedStories.length && u.stories.every((s, i) => s.id === updatedStories[i]?.id)) {
+                  return u;
+                }
+                return { ...u, stories: updatedStories };
+              });
+            }
+
             return mergedList;
           });
         },
@@ -1429,6 +1440,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       filter: storyFilter,
     };
 
+    // Append new story directly to currentUser stories array in AppContext state
+    setCurrentUser((prev) => {
+      const existingUserStories = (prev.stories || []).filter((s) => s.id !== storyId);
+      return {
+        ...prev,
+        stories: [newStory, ...existingUserStories],
+      };
+    });
+
     setStories(prev => {
       const meGroupIndex = prev.findIndex(g => g.userId === currentUser.id);
       if (meGroupIndex >= 0) {
@@ -1486,6 +1506,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       let remainingCountInTargetGroup = 0;
       let targetUserId = currentUser.id;
 
+      // Also clean from currentUser stories state if present
+      setCurrentUser((prev) => {
+        if (!prev.stories || !prev.stories.some((s) => s.id === storyId)) return prev;
+        return {
+          ...prev,
+          stories: prev.stories.filter((s) => s.id !== storyId),
+        };
+      });
+
       setStories((prev) => {
         const groupIdx = prev.findIndex((g) => g.stories && g.stories.some((s) => s.id === storyId));
         if (groupIdx === -1) {
@@ -1538,7 +1567,21 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   );
 
   const activeStoryGroup = activeStoryUserId
-    ? stories.find(s => s.userId === activeStoryUserId) || null
+    ? (activeStoryUserId === currentUser.id
+        ? {
+            userId: currentUser.id,
+            user: {
+              id: currentUser.id,
+              name: currentUser.name || 'Your Story',
+              username: currentUser.username,
+              avatar: currentUser.avatar,
+            },
+            hasUnseenStories: (currentUser.stories?.length ?? 0) > 0,
+            stories: currentUser.stories && currentUser.stories.length > 0
+              ? currentUser.stories
+              : (stories.find((s) => s.userId === currentUser.id)?.stories || []),
+          }
+        : stories.find(s => s.userId === activeStoryUserId) || null)
     : null;
 
   const nextStory = useCallback(() => {
