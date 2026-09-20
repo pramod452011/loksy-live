@@ -1,5 +1,5 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { RefreshCw, X, AlertCircle, Check, Video, Camera } from 'lucide-react';
+import { RefreshCw, X, AlertCircle, Check, Video, Camera, Image as ImageIcon } from 'lucide-react';
 
 export interface StoryCameraProps {
   isOpen: boolean;
@@ -21,6 +21,7 @@ export const StoryCamera: React.FC<StoryCameraProps> = ({
   const streamRef = useRef<MediaStream | null>(null);
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const recordedChunksRef = useRef<Blob[]>([]);
+  const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   const [facingMode, setFacingMode] = useState<'user' | 'environment'>('environment');
   const [hasPermission, setHasPermission] = useState<boolean | null>(null);
@@ -298,6 +299,33 @@ export const StoryCamera: React.FC<StoryCameraProps> = ({
     hasStartedRecordingRef.current = false;
   }, [isRecording, stopRecording]);
 
+  // Handle file selection from phone gallery
+  const handleGalleryFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    if (file.type.startsWith('video/')) {
+      stopCamera();
+      if (onCaptureVideo) {
+        onCaptureVideo(file);
+      }
+      onClose();
+    } else {
+      const reader = new FileReader();
+      reader.onload = (loadEvent) => {
+        const result = loadEvent.target?.result as string;
+        if (result && onCapturePhoto) {
+          stopCamera();
+          onCapturePhoto(result);
+          onClose();
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+    // Reset file input value to allow re-selecting same file
+    e.target.value = '';
+  };
+
   if (!isOpen) return null;
 
   // SVG circular ring calculations (15-second progress)
@@ -389,14 +417,26 @@ export const StoryCamera: React.FC<StoryCameraProps> = ({
             </div>
             <h3 className="text-base font-bold mb-2">Camera & Mic Access Required</h3>
             <p className="text-xs text-zinc-300 mb-5 leading-relaxed">{errorMsg}</p>
-            <button
-              type="button"
-              id="camera-retry-btn"
-              onClick={startCamera}
-              className="px-6 py-2.5 bg-gradient-to-r from-orange-500 via-pink-600 to-rose-600 hover:from-orange-600 hover:to-rose-700 text-white rounded-full text-xs font-bold shadow-xl active:scale-95 transition-transform cursor-pointer"
-            >
-              Allow & Try Again
-            </button>
+            <div className="flex items-center gap-3">
+              <button
+                type="button"
+                id="camera-retry-btn"
+                onClick={startCamera}
+                className="px-5 py-2.5 bg-gradient-to-r from-orange-500 via-pink-600 to-rose-600 hover:from-orange-600 hover:to-rose-700 text-white rounded-full text-xs font-bold shadow-xl active:scale-95 transition-transform cursor-pointer"
+              >
+                Allow & Try Again
+              </button>
+              <button
+                type="button"
+                id="camera-perm-gallery-btn"
+                onClick={() => fileInputRef.current?.click()}
+                className="px-4 py-2.5 bg-white/15 hover:bg-white/25 border border-white/20 text-white rounded-full text-xs font-bold shadow-xl active:scale-95 transition-transform cursor-pointer flex items-center gap-1.5"
+                title="Pick Photo or Video from Gallery"
+              >
+                <ImageIcon className="w-4 h-4 text-pink-400" />
+                <span>Gallery</span>
+              </button>
+            </div>
           </div>
         ) : capturedPhoto ? (
           <div className="relative w-full h-full flex items-center justify-center bg-black">
@@ -447,90 +487,137 @@ export const StoryCamera: React.FC<StoryCameraProps> = ({
             </button>
           </div>
         ) : (
-          <div className="flex flex-col items-center gap-3">
-            {/* Shutter Button with Animated 15s Progress Ring */}
-            <div className="relative w-28 h-28 flex items-center justify-center">
-              {/* Circular SVG 15-second Progress Ring */}
-              <svg className="absolute inset-0 w-28 h-28 -rotate-90 pointer-events-none">
-                {/* Background Ring Track */}
-                <circle
-                  cx="56"
-                  cy="56"
-                  r={ringRadius}
-                  stroke="rgba(255, 255, 255, 0.25)"
-                  strokeWidth={isRecording ? '5' : '3'}
-                  fill="none"
-                />
-                {/* Active Progress Ring */}
-                {isRecording && (
+          <div className="flex flex-col items-center gap-3 w-full">
+            {/* Hidden File Input for Phone Gallery selection */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              id="story-camera-gallery-input"
+              accept="image/*,video/*"
+              onChange={handleGalleryFileChange}
+              className="hidden"
+            />
+
+            {/* Bottom Controls Row: Gallery Button | Shutter Button | Flip Button */}
+            <div className="w-full max-w-xs flex items-center justify-between px-3">
+              {/* Phone Gallery Picker Button */}
+              <button
+                type="button"
+                id="camera-gallery-btn"
+                onClick={() => fileInputRef.current?.click()}
+                disabled={isRecording}
+                className="flex flex-col items-center gap-1 group p-2 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 active:scale-95 transition-all cursor-pointer disabled:opacity-30 disabled:pointer-events-none"
+                title="Choose Photo or Video from Gallery"
+              >
+                <div className="w-11 h-11 rounded-xl bg-gradient-to-tr from-amber-500/25 via-pink-500/25 to-purple-500/25 border border-white/25 flex items-center justify-center text-white shadow-inner group-hover:border-white/50 transition-colors">
+                  <ImageIcon className="w-5 h-5 text-white group-hover:scale-110 transition-transform" />
+                </div>
+                <span className="text-[10px] font-bold text-zinc-300 group-hover:text-white tracking-wide">
+                  Gallery
+                </span>
+              </button>
+
+              {/* Shutter Button with Animated 15s Progress Ring */}
+              <div className="relative w-28 h-28 flex items-center justify-center">
+                {/* Circular SVG 15-second Progress Ring */}
+                <svg className="absolute inset-0 w-28 h-28 -rotate-90 pointer-events-none">
+                  {/* Background Ring Track */}
                   <circle
                     cx="56"
                     cy="56"
                     r={ringRadius}
-                    stroke="#FF3040"
-                    strokeWidth="5"
-                    strokeDasharray={ringCircumference}
-                    strokeDashoffset={ringOffset}
-                    strokeLinecap="round"
+                    stroke="rgba(255, 255, 255, 0.25)"
+                    strokeWidth={isRecording ? '5' : '3'}
                     fill="none"
-                    className="transition-all duration-75 ease-linear"
                   />
-                )}
-              </svg>
+                  {/* Active Progress Ring */}
+                  {isRecording && (
+                    <circle
+                      cx="56"
+                      cy="56"
+                      r={ringRadius}
+                      stroke="#FF3040"
+                      strokeWidth="5"
+                      strokeDasharray={ringCircumference}
+                      strokeDashoffset={ringOffset}
+                      strokeLinecap="round"
+                      fill="none"
+                      className="transition-all duration-75 ease-linear"
+                    />
+                  )}
+                </svg>
 
-              {/* Shutter Button Core (Touch & Mouse with ContextMenu prevention) */}
+                {/* Shutter Button Core (Touch & Mouse with ContextMenu prevention) */}
+                <button
+                  type="button"
+                  id="camera-shutter-btn"
+                  onTouchStart={(e) => {
+                    isTouchRef.current = true;
+                    handleShutterStart(e);
+                  }}
+                  onTouchEnd={(e) => {
+                    handleShutterEnd(e);
+                    setTimeout(() => {
+                      isTouchRef.current = false;
+                    }, 400);
+                  }}
+                  onTouchCancel={handleShutterCancel}
+                  onTouchMove={(e) => {
+                    // Prevent touch drag scrolling or browser context gesture
+                    e.preventDefault();
+                  }}
+                  onMouseDown={(e) => {
+                    if (isTouchRef.current) return;
+                    if (e.button !== 0) return;
+                    handleShutterStart(e);
+                  }}
+                  onMouseUp={(e) => {
+                    if (isTouchRef.current) return;
+                    handleShutterEnd(e);
+                  }}
+                  onMouseLeave={(e) => {
+                    if (isTouchRef.current) return;
+                    handleShutterCancel(e);
+                  }}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    return false;
+                  }}
+                  disabled={hasPermission === false}
+                  style={{ touchAction: 'none', WebkitTouchCallout: 'none', userSelect: 'none' }}
+                  className={`relative rounded-full flex items-center justify-center cursor-pointer select-none transition-all duration-200 outline-none ${
+                    isRecording
+                      ? 'w-18 h-18 bg-red-600 scale-110 shadow-2xl shadow-red-500/60 ring-4 ring-red-500/30'
+                      : 'w-20 h-20 bg-white hover:bg-zinc-100 active:scale-95 shadow-xl'
+                  } disabled:opacity-30 disabled:pointer-events-none`}
+                  title="Tap for photo • Hold 300ms for 15s video"
+                >
+                  <div
+                    className={`transition-all duration-200 ${
+                      isRecording
+                        ? 'w-6 h-6 bg-white rounded-md'
+                        : 'w-16 h-16 rounded-full border-2 border-zinc-900/10'
+                    }`}
+                  />
+                </button>
+              </div>
+
+              {/* Camera Flip Button */}
               <button
                 type="button"
-                id="camera-shutter-btn"
-                onTouchStart={(e) => {
-                  isTouchRef.current = true;
-                  handleShutterStart(e);
-                }}
-                onTouchEnd={(e) => {
-                  handleShutterEnd(e);
-                  setTimeout(() => {
-                    isTouchRef.current = false;
-                  }, 400);
-                }}
-                onTouchCancel={handleShutterCancel}
-                onTouchMove={(e) => {
-                  // Prevent touch drag scrolling or browser context gesture
-                  e.preventDefault();
-                }}
-                onMouseDown={(e) => {
-                  if (isTouchRef.current) return;
-                  if (e.button !== 0) return;
-                  handleShutterStart(e);
-                }}
-                onMouseUp={(e) => {
-                  if (isTouchRef.current) return;
-                  handleShutterEnd(e);
-                }}
-                onMouseLeave={(e) => {
-                  if (isTouchRef.current) return;
-                  handleShutterCancel(e);
-                }}
-                onContextMenu={(e) => {
-                  e.preventDefault();
-                  e.stopPropagation();
-                  return false;
-                }}
-                disabled={hasPermission === false}
-                style={{ touchAction: 'none', WebkitTouchCallout: 'none', userSelect: 'none' }}
-                className={`relative rounded-full flex items-center justify-center cursor-pointer select-none transition-all duration-200 outline-none ${
-                  isRecording
-                    ? 'w-18 h-18 bg-red-600 scale-110 shadow-2xl shadow-red-500/60 ring-4 ring-red-500/30'
-                    : 'w-20 h-20 bg-white hover:bg-zinc-100 active:scale-95 shadow-xl'
-                } disabled:opacity-30 disabled:pointer-events-none`}
-                title="Tap for photo • Hold 300ms for 15s video"
+                id="camera-bottom-flip-btn"
+                onClick={toggleFacingMode}
+                disabled={isRecording || hasPermission === false}
+                className="flex flex-col items-center gap-1 group p-2 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 active:scale-95 transition-all cursor-pointer disabled:opacity-30 disabled:pointer-events-none"
+                title="Flip Front / Back Camera"
               >
-                <div
-                  className={`transition-all duration-200 ${
-                    isRecording
-                      ? 'w-6 h-6 bg-white rounded-md'
-                      : 'w-16 h-16 rounded-full border-2 border-zinc-900/10'
-                  }`}
-                />
+                <div className="w-11 h-11 rounded-xl bg-white/10 border border-white/20 flex items-center justify-center text-white group-hover:border-white/40 transition-colors">
+                  <RefreshCw className="w-5 h-5 group-hover:rotate-180 transition-transform duration-500" />
+                </div>
+                <span className="text-[10px] font-bold text-zinc-300 group-hover:text-white tracking-wide">
+                  Flip
+                </span>
               </button>
             </div>
 
@@ -542,7 +629,7 @@ export const StoryCamera: React.FC<StoryCameraProps> = ({
                   Recording video... Release finger to finish
                 </span>
               ) : (
-                'Tap for photo • Hold for video (15s)'
+                'Tap shutter for photo • Hold for video • Or pick from Gallery'
               )}
             </p>
           </div>

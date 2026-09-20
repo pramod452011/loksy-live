@@ -22,6 +22,8 @@ import {
   Play,
   Pause,
   Disc3,
+  SlidersHorizontal,
+  Video,
 } from 'lucide-react';
 import { useApp } from '../context/AppContext';
 import { MusicTrack } from '../types';
@@ -343,6 +345,11 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
   const [activeToolToast, setActiveToolToast] = useState<string | null>(null);
   const [isMuted, setIsMuted] = useState<boolean>(false);
 
+  // Instagram-style Audio Balance Mixer state
+  const [showAudioMixerModal, setShowAudioMixerModal] = useState<boolean>(false);
+  const [videoAudioVolume, setVideoAudioVolume] = useState<number>(100); // 0 - 100%
+  const [musicAudioVolume, setMusicAudioVolume] = useState<number>(100); // 0 - 100%
+
   // Video element ref
   const videoRef = useRef<HTMLVideoElement | null>(null);
   // Audio playback elements
@@ -390,7 +397,8 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
         storyAudioRef.current.crossOrigin = 'anonymous';
       }
       const audio = storyAudioRef.current;
-      audio.muted = isMuted;
+      audio.volume = isMuted ? 0 : Math.max(0, Math.min(1, musicAudioVolume / 100));
+      audio.muted = isMuted || musicAudioVolume === 0;
       if (audio.src !== selectedMusic.audioUrl) {
         audio.src = selectedMusic.audioUrl;
       }
@@ -406,17 +414,25 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
         storyAudioRef.current.pause();
       }
     };
-  }, [isOpen, selectedMusic, isMuted, showMusicModal]);
+  }, [isOpen, selectedMusic, isMuted, showMusicModal, musicAudioVolume]);
 
-  // Handle Mute Toggle Synchronization
+  // Real-Time Native Video Audio Volume & Mute Synchronization
+  useEffect(() => {
+    if (videoRef.current) {
+      const vol = Math.max(0, Math.min(1, videoAudioVolume / 100));
+      videoRef.current.volume = vol;
+      videoRef.current.muted = isMuted || videoAudioVolume === 0;
+    }
+  }, [videoAudioVolume, isMuted]);
+
+  // Real-Time Background Music Audio Volume & Mute Synchronization
   useEffect(() => {
     if (storyAudioRef.current) {
-      storyAudioRef.current.muted = isMuted;
+      const vol = Math.max(0, Math.min(1, musicAudioVolume / 100));
+      storyAudioRef.current.volume = vol;
+      storyAudioRef.current.muted = isMuted || musicAudioVolume === 0;
     }
-    if (videoRef.current) {
-      videoRef.current.muted = isMuted;
-    }
-  }, [isMuted]);
+  }, [musicAudioVolume, isMuted]);
 
   // Stop preview audio when modal closes or unmounts
   useEffect(() => {
@@ -786,8 +802,8 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
         {
           audioStartTime: 0,
           clipDuration: 15,
-          originalVolume: detectedMediaType === 'video' && !isMuted ? 100 : 0,
-          musicVolume: isMuted ? 0 : 85,
+          originalVolume: detectedMediaType === 'video' && !isMuted ? videoAudioVolume : 0,
+          musicVolume: isMuted ? 0 : musicAudioVolume,
           mediaType: detectedMediaType,
         }
       );
@@ -887,19 +903,29 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
 
           {/* Editor Tool Action Buttons */}
           <div className="flex items-center gap-2">
-            {/* Sound Mute/Unmute Toggle (Video or Attached Music) */}
+            {/* Instagram-Style Audio Balance & Volume Mixer Button */}
             <button
               type="button"
               id="story-editor-sound-btn"
-              onClick={() => {
-                const nextMuted = !isMuted;
-                setIsMuted(nextMuted);
-                showToast(nextMuted ? 'Sound muted' : 'Sound unmuted');
-              }}
-              className="p-2 rounded-full bg-black/50 hover:bg-black/75 backdrop-blur-md text-white active:scale-90 transition-all cursor-pointer border border-white/15"
-              title={isMuted ? 'Unmute Story Sound' : 'Mute Story Sound'}
+              onClick={() => setShowAudioMixerModal(true)}
+              className={`p-2 rounded-full backdrop-blur-md text-white active:scale-90 transition-all cursor-pointer border ${
+                showAudioMixerModal
+                  ? 'bg-gradient-to-tr from-[#00E5FF] to-[#0070F3] border-white/50 shadow-lg'
+                  : isMuted || (videoAudioVolume === 0 && (musicAudioVolume === 0 || !selectedMusic))
+                  ? 'bg-red-500/25 border-red-500/40 text-red-400'
+                  : videoAudioVolume !== 100 || (selectedMusic && musicAudioVolume !== 100)
+                  ? 'bg-cyan-500/25 border-cyan-400/50 text-cyan-300'
+                  : 'bg-black/50 hover:bg-black/75 border-white/15'
+              }`}
+              title="Audio Balance & Volume Mixer"
             >
-              {isMuted ? <VolumeX className="w-4 h-4 text-red-400" /> : <Volume2 className="w-4 h-4" />}
+              {isMuted || (videoAudioVolume === 0 && (musicAudioVolume === 0 || !selectedMusic)) ? (
+                <VolumeX className="w-4 h-4" />
+              ) : videoAudioVolume !== 100 || (selectedMusic && musicAudioVolume !== 100) ? (
+                <SlidersHorizontal className="w-4 h-4" />
+              ) : (
+                <Volume2 className="w-4 h-4" />
+              )}
             </button>
 
             {/* Interactive Text Tool */}
@@ -1348,6 +1374,326 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
               {/* Modal Footer Note */}
               <div className="pt-2 text-center text-[10px] text-zinc-500">
                 Tap track to attach to story • Previews play in 30-second clips
+              </div>
+            </div>
+          )}
+
+          {/* ============================================================ */}
+          {/* INSTAGRAM-STYLE AUDIO MIXER / VOLUME BALANCE MODAL           */}
+          {/* ============================================================ */}
+          {showAudioMixerModal && (
+            <div
+              id="story-editor-audio-mixer-modal"
+              className="absolute inset-0 bg-black/85 backdrop-blur-md z-50 flex items-center justify-center p-4 animate-fade-in"
+              onClick={(e) => {
+                if (e.target === e.currentTarget) {
+                  setShowAudioMixerModal(false);
+                }
+              }}
+            >
+              <div className="w-full max-w-sm bg-zinc-950/95 border border-white/20 rounded-3xl p-5 shadow-2xl space-y-5 text-white animate-scale-in">
+                {/* Header */}
+                <div className="flex items-center justify-between pb-2 border-b border-white/10">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-xl bg-gradient-to-tr from-[#00E5FF] to-[#0070F3] flex items-center justify-center text-white shadow-md">
+                      <SlidersHorizontal className="w-4 h-4" />
+                    </div>
+                    <div>
+                      <h3 className="text-white font-bold text-sm leading-tight">Audio Balance</h3>
+                      <p className="text-[10px] text-zinc-400">Control Video & Music Volume Mix</p>
+                    </div>
+                  </div>
+
+                  <button
+                    type="button"
+                    id="audio-mixer-done-btn"
+                    onClick={() => setShowAudioMixerModal(false)}
+                    className="px-3.5 py-1.5 rounded-full bg-white text-black font-bold text-xs hover:bg-zinc-200 active:scale-95 transition-all shadow-md cursor-pointer"
+                  >
+                    Done
+                  </button>
+                </div>
+
+                {/* QUICK PRESETS */}
+                <div>
+                  <label className="text-[10px] font-bold text-zinc-400 uppercase tracking-wider block mb-2">
+                    Quick Balance Presets
+                  </label>
+                  <div className="grid grid-cols-3 gap-2">
+                    {/* Preset 1: Mute Original */}
+                    <button
+                      type="button"
+                      id="audio-preset-mute-original"
+                      onClick={() => {
+                        setVideoAudioVolume(0);
+                        setMusicAudioVolume(100);
+                        setIsMuted(false);
+                        showToast('Preset: Mute Original applied');
+                      }}
+                      className={`py-2 px-1.5 rounded-xl border text-center transition-all cursor-pointer ${
+                        videoAudioVolume === 0 && musicAudioVolume === 100
+                          ? 'bg-[#FF007A]/25 border-[#FF007A] text-white shadow-md font-bold'
+                          : 'bg-white/5 hover:bg-white/10 border-white/10 text-zinc-300 text-xs'
+                      }`}
+                    >
+                      <span className="block text-[11px] font-bold leading-tight">Mute Original</span>
+                      <span className="text-[9px] text-zinc-400 font-normal">0% / 100%</span>
+                    </button>
+
+                    {/* Preset 2: Equal Mix (50/50) */}
+                    <button
+                      type="button"
+                      id="audio-preset-equal-mix"
+                      onClick={() => {
+                        setVideoAudioVolume(50);
+                        setMusicAudioVolume(50);
+                        setIsMuted(false);
+                        showToast('Preset: Equal Mix (50/50) applied');
+                      }}
+                      className={`py-2 px-1.5 rounded-xl border text-center transition-all cursor-pointer ${
+                        videoAudioVolume === 50 && musicAudioVolume === 50
+                          ? 'bg-[#00E5FF]/25 border-[#00E5FF] text-white shadow-md font-bold'
+                          : 'bg-white/5 hover:bg-white/10 border-white/10 text-zinc-300 text-xs'
+                      }`}
+                    >
+                      <span className="block text-[11px] font-bold leading-tight">Equal Mix</span>
+                      <span className="text-[9px] text-zinc-400 font-normal">50 / 50</span>
+                    </button>
+
+                    {/* Preset 3: Full Music */}
+                    <button
+                      type="button"
+                      id="audio-preset-full-music"
+                      onClick={() => {
+                        setVideoAudioVolume(0);
+                        setMusicAudioVolume(100);
+                        setIsMuted(false);
+                        showToast('Preset: Full Music applied');
+                      }}
+                      className={`py-2 px-1.5 rounded-xl border text-center transition-all cursor-pointer ${
+                        videoAudioVolume === 0 && musicAudioVolume === 100
+                          ? 'bg-purple-600/30 border-purple-500 text-white shadow-md font-bold'
+                          : 'bg-white/5 hover:bg-white/10 border-white/10 text-zinc-300 text-xs'
+                      }`}
+                    >
+                      <span className="block text-[11px] font-bold leading-tight">Full Music</span>
+                      <span className="text-[9px] text-zinc-400 font-normal">Music 100%</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* SLIDERS SECTION */}
+                <div className="space-y-4 pt-1">
+                  {/* SLIDER 1: ORIGINAL VIDEO AUDIO */}
+                  <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <div className="w-6 h-6 rounded-lg bg-cyan-500/20 text-cyan-400 flex items-center justify-center">
+                          <Video className="w-3.5 h-3.5" />
+                        </div>
+                        <div>
+                          <span className="text-xs font-bold text-white block leading-none">
+                            Original Video Audio
+                          </span>
+                          <span className="text-[10px] text-zinc-400">
+                            {detectedMediaType === 'video' ? 'Camera recording track' : 'No video audio in photo'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2">
+                        <span
+                          className={`text-xs font-black px-2 py-0.5 rounded-md ${
+                            videoAudioVolume === 0
+                              ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                              : 'bg-cyan-500/20 text-cyan-300 border border-cyan-500/30'
+                          }`}
+                        >
+                          {videoAudioVolume === 0 ? 'Muted' : `${videoAudioVolume}%`}
+                        </span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setVideoAudioVolume((prev) => (prev > 0 ? 0 : 100));
+                            setIsMuted(false);
+                          }}
+                          className="p-1 rounded-full text-zinc-400 hover:text-white hover:bg-white/10 transition-colors"
+                          title={videoAudioVolume > 0 ? 'Mute video audio' : 'Unmute video audio'}
+                        >
+                          {videoAudioVolume === 0 ? (
+                            <VolumeX className="w-3.5 h-3.5 text-red-400" />
+                          ) : (
+                            <Volume2 className="w-3.5 h-3.5" />
+                          )}
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Slider input */}
+                    <div className="relative flex items-center">
+                      <input
+                        type="range"
+                        id="mixer-original-video-slider"
+                        min="0"
+                        max="100"
+                        step="1"
+                        disabled={detectedMediaType !== 'video'}
+                        value={detectedMediaType === 'video' ? videoAudioVolume : 0}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setVideoAudioVolume(val);
+                          if (val > 0 && isMuted) setIsMuted(false);
+                        }}
+                        className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-[#00E5FF] bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                        style={{
+                          background: `linear-gradient(to right, #00E5FF ${
+                            detectedMediaType === 'video' ? videoAudioVolume : 0
+                          }%, #27272a ${detectedMediaType === 'video' ? videoAudioVolume : 0}%)`,
+                        }}
+                      />
+                    </div>
+                    {detectedMediaType !== 'video' && (
+                      <p className="text-[10px] text-zinc-500 italic">
+                        * Original audio is only available when editing video stories
+                      </p>
+                    )}
+                  </div>
+
+                  {/* SLIDER 2: SONG AUDIO */}
+                  <div className="p-3.5 rounded-2xl bg-white/5 border border-white/10 space-y-2.5">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2 min-w-0">
+                        {selectedMusic ? (
+                          <img
+                            src={selectedMusic.coverUrl}
+                            alt={selectedMusic.title}
+                            className="w-6 h-6 rounded-lg object-cover border border-white/20 shrink-0"
+                          />
+                        ) : (
+                          <div className="w-6 h-6 rounded-lg bg-pink-500/20 text-pink-400 flex items-center justify-center shrink-0">
+                            <Music className="w-3.5 h-3.5" />
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <span className="text-xs font-bold text-white block leading-none truncate">
+                            Song Audio
+                          </span>
+                          <span className="text-[10px] text-zinc-400 truncate block">
+                            {selectedMusic ? `${selectedMusic.title} • ${selectedMusic.artist}` : 'No song attached'}
+                          </span>
+                        </div>
+                      </div>
+
+                      <div className="flex items-center gap-2 shrink-0">
+                        <span
+                          className={`text-xs font-black px-2 py-0.5 rounded-md ${
+                            !selectedMusic || musicAudioVolume === 0
+                              ? 'bg-red-500/20 text-red-400 border border-red-500/30'
+                              : 'bg-pink-500/20 text-pink-300 border border-pink-500/30'
+                          }`}
+                        >
+                          {!selectedMusic ? 'No song' : musicAudioVolume === 0 ? 'Muted' : `${musicAudioVolume}%`}
+                        </span>
+                        {selectedMusic && (
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setMusicAudioVolume((prev) => (prev > 0 ? 0 : 100));
+                              setIsMuted(false);
+                            }}
+                            className="p-1 rounded-full text-zinc-400 hover:text-white hover:bg-white/10 transition-colors"
+                            title={musicAudioVolume > 0 ? 'Mute song audio' : 'Unmute song audio'}
+                          >
+                            {musicAudioVolume === 0 ? (
+                              <VolumeX className="w-3.5 h-3.5 text-red-400" />
+                            ) : (
+                              <Volume2 className="w-3.5 h-3.5" />
+                            )}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Slider input */}
+                    <div className="relative flex items-center">
+                      <input
+                        type="range"
+                        id="mixer-song-audio-slider"
+                        min="0"
+                        max="100"
+                        step="1"
+                        disabled={!selectedMusic}
+                        value={selectedMusic ? musicAudioVolume : 0}
+                        onChange={(e) => {
+                          const val = Number(e.target.value);
+                          setMusicAudioVolume(val);
+                          if (val > 0 && isMuted) setIsMuted(false);
+                        }}
+                        className="w-full h-2 rounded-lg appearance-none cursor-pointer accent-[#FF007A] bg-zinc-800 disabled:opacity-40 disabled:cursor-not-allowed"
+                        style={{
+                          background: `linear-gradient(to right, #FF007A ${
+                            selectedMusic ? musicAudioVolume : 0
+                          }%, #27272a ${selectedMusic ? musicAudioVolume : 0}%)`,
+                        }}
+                      />
+                    </div>
+
+                    {!selectedMusic && (
+                      <div className="flex items-center justify-between pt-1">
+                        <span className="text-[10px] text-zinc-500">Want background music?</span>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setShowAudioMixerModal(false);
+                            setShowMusicModal(true);
+                          }}
+                          className="text-[11px] font-bold text-pink-400 hover:text-pink-300 underline underline-offset-2 flex items-center gap-1 cursor-pointer"
+                        >
+                          <Music className="w-3 h-3" />
+                          Attach a Song
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Footer info & Master Mute */}
+                <div className="pt-2 flex items-center justify-between border-t border-white/10 text-xs">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const nextMuted = !isMuted;
+                      setIsMuted(nextMuted);
+                      showToast(nextMuted ? 'All story sound muted' : 'Story sound unmuted');
+                    }}
+                    className="flex items-center gap-1.5 text-zinc-400 hover:text-white transition-colors cursor-pointer"
+                  >
+                    {isMuted ? (
+                      <>
+                        <VolumeX className="w-4 h-4 text-red-400" />
+                        <span className="text-red-400 font-semibold">Story is Muted</span>
+                      </>
+                    ) : (
+                      <>
+                        <Volume2 className="w-4 h-4 text-green-400" />
+                        <span>Mute All Audio</span>
+                      </>
+                    )}
+                  </button>
+
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setVideoAudioVolume(100);
+                      setMusicAudioVolume(100);
+                      setIsMuted(false);
+                      showToast('Reset to 100% Both');
+                    }}
+                    className="text-zinc-400 hover:text-zinc-200 text-[11px]"
+                  >
+                    Reset Volumes
+                  </button>
+                </div>
               </div>
             </div>
           )}
