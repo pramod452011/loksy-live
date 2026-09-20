@@ -9,7 +9,7 @@ export interface StoryCameraProps {
 }
 
 const MAX_RECORD_SECONDS = 15;
-const LONG_PRESS_THRESHOLD_MS = 350;
+const LONG_PRESS_THRESHOLD_MS = 300;
 
 export const StoryCamera: React.FC<StoryCameraProps> = ({
   isOpen,
@@ -34,6 +34,8 @@ export const StoryCamera: React.FC<StoryCameraProps> = ({
   const recordingIntervalRef = useRef<number | null>(null);
   const recordStartTimeRef = useRef<number | null>(null);
   const isPressingRef = useRef<boolean>(false);
+  const hasStartedRecordingRef = useRef<boolean>(false);
+  const isTouchRef = useRef<boolean>(false);
 
   const stopCamera = useCallback(() => {
     if (longPressTimerRef.current) {
@@ -67,6 +69,8 @@ export const StoryCamera: React.FC<StoryCameraProps> = ({
     setIsRecording(false);
     setRecordProgress(0);
     setRecordDurationSeconds(0);
+    isPressingRef.current = false;
+    hasStartedRecordingRef.current = false;
   }, []);
 
   const startCamera = useCallback(async () => {
@@ -227,28 +231,58 @@ export const StoryCamera: React.FC<StoryCameraProps> = ({
     } catch (err) {
       console.error('Failed to start MediaRecorder:', err);
       setIsRecording(false);
+      hasStartedRecordingRef.current = false;
     }
   }, [isRecording, onCaptureVideo, onClose, stopRecording]);
 
-  // Handle Shutter Press (Tap for Photo, Long Press for Video)
-  const handleShutterPointerDown = (e: React.PointerEvent) => {
+  // Handle Shutter Press Start (Touch or Mouse, 300ms threshold)
+  const handleShutterStart = useCallback((e: React.TouchEvent | React.MouseEvent) => {
     e.preventDefault();
+    e.stopPropagation();
     if (hasPermission === false || capturedPhoto) return;
+    if (isPressingRef.current) return;
 
     isPressingRef.current = true;
-    const startTime = Date.now();
+    hasStartedRecordingRef.current = false;
 
-    // Start long-press timer
+    if (longPressTimerRef.current) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+
+    // 300ms hold -> Start Video Recording
     longPressTimerRef.current = window.setTimeout(() => {
       if (isPressingRef.current) {
+        hasStartedRecordingRef.current = true;
         startRecording();
       }
     }, LONG_PRESS_THRESHOLD_MS);
+  }, [hasPermission, capturedPhoto, startRecording]);
 
-    (e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);
-  };
+  // Handle Shutter Press Release (Touch or Mouse)
+  const handleShutterEnd = useCallback((e: React.TouchEvent | React.MouseEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    if (!isPressingRef.current) return;
+    isPressingRef.current = false;
 
-  const handleShutterPointerUp = (e: React.PointerEvent) => {
+    if (longPressTimerRef.current) {
+      window.clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+
+    // Check if recording is in progress or was triggered
+    if (isRecording || hasStartedRecordingRef.current || (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording')) {
+      stopRecording();
+    } else {
+      // Tap (< 300ms threshold) -> Take photo
+      takePhoto();
+    }
+    hasStartedRecordingRef.current = false;
+  }, [isRecording, stopRecording, takePhoto]);
+
+  // Handle Press Cancel (Touch Cancel or Mouse Leave)
+  const handleShutterCancel = useCallback((e: React.TouchEvent | React.MouseEvent) => {
     e.preventDefault();
     if (!isPressingRef.current) return;
     isPressingRef.current = false;
@@ -258,43 +292,28 @@ export const StoryCamera: React.FC<StoryCameraProps> = ({
       longPressTimerRef.current = null;
     }
 
-    if (isRecording) {
-      // Stopped holding -> finish video recording
-      stopRecording();
-    } else {
-      // Released before long-press threshold -> tap = capture photo
-      takePhoto();
-    }
-
-    try {
-      (e.currentTarget as HTMLElement).releasePointerCapture(e.pointerId);
-    } catch {
-      // ignore
-    }
-  };
-
-  const handleShutterPointerCancel = () => {
-    isPressingRef.current = false;
-    if (longPressTimerRef.current) {
-      window.clearTimeout(longPressTimerRef.current);
-      longPressTimerRef.current = null;
-    }
-    if (isRecording) {
+    if (isRecording || hasStartedRecordingRef.current || (mediaRecorderRef.current && mediaRecorderRef.current.state === 'recording')) {
       stopRecording();
     }
-  };
+    hasStartedRecordingRef.current = false;
+  }, [isRecording, stopRecording]);
 
   if (!isOpen) return null;
 
-  // SVG circular ring calculations
-  const ringRadius = 40;
+  // SVG circular ring calculations (15-second progress)
+  const ringRadius = 42;
   const ringCircumference = 2 * Math.PI * ringRadius;
   const ringOffset = ringCircumference - (recordProgress / 100) * ringCircumference;
 
   return (
     <div
       id="loksy-story-camera-overlay"
+      onContextMenu={(e) => {
+        e.preventDefault();
+        e.stopPropagation();
+      }}
       className="fixed inset-0 z-50 bg-black flex flex-col items-center justify-between select-none overflow-hidden touch-none"
+      style={{ WebkitTouchCallout: 'none', userSelect: 'none' }}
     >
       {/* Top Header Bar */}
       <div className="w-full flex items-center justify-between px-4 py-3 z-30 bg-gradient-to-b from-black/85 via-black/40 to-transparent">
@@ -312,9 +331,12 @@ export const StoryCamera: React.FC<StoryCameraProps> = ({
           {isRecording ? (
             <div
               id="camera-recording-badge"
-              className="flex items-center gap-2 px-3 py-1 rounded-full bg-red-600/90 border border-red-400/30 text-white text-xs font-mono font-bold shadow-lg animate-pulse"
+              className="flex items-center gap-2 px-3.5 py-1.5 rounded-full bg-red-600/90 border border-red-400/40 text-white text-xs font-mono font-bold shadow-lg shadow-red-600/40 animate-pulse"
             >
-              <span className="w-2.5 h-2.5 rounded-full bg-white animate-ping" />
+              <span className="relative flex h-2.5 w-2.5">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-white opacity-90" />
+                <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-white" />
+              </span>
               <span>{recordDurationSeconds.toFixed(1)}s / 15.0s</span>
             </div>
           ) : (
@@ -339,6 +361,27 @@ export const StoryCamera: React.FC<StoryCameraProps> = ({
 
       {/* 9:16 Camera Viewfinder Stage */}
       <div className="relative w-full h-full flex items-center justify-center bg-zinc-950 overflow-hidden">
+        {/* Top 15-Second Recording Progress Bar */}
+        {isRecording && (
+          <div className="absolute top-0 inset-x-0 h-1.5 bg-white/20 z-40">
+            <div
+              className="h-full bg-gradient-to-r from-red-500 via-rose-500 to-red-600 transition-all duration-75 ease-linear shadow-[0_0_10px_rgba(239,68,68,0.8)]"
+              style={{ width: `${recordProgress}%` }}
+            />
+          </div>
+        )}
+
+        {/* Screen Center/Corner Blinking RED DOT while recording */}
+        {isRecording && (
+          <div className="absolute top-4 left-4 z-30 flex items-center gap-2 px-3 py-1.5 rounded-full bg-black/60 backdrop-blur-md border border-red-500/40 text-white shadow-xl animate-fade-in">
+            <span className="relative flex h-3.5 w-3.5">
+              <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-red-500 opacity-75" />
+              <span className="relative inline-flex rounded-full h-3.5 w-3.5 bg-red-600 shadow-[0_0_8px_#ef4444]" />
+            </span>
+            <span className="text-[11px] font-bold tracking-widest text-red-400 uppercase">REC</span>
+          </div>
+        )}
+
         {hasPermission === false ? (
           <div className="flex flex-col items-center justify-center p-6 text-center max-w-sm text-white z-20">
             <div className="w-16 h-16 rounded-full bg-red-500/15 border border-red-500/30 flex items-center justify-center mb-4 shadow-lg shadow-red-500/10">
@@ -406,13 +449,13 @@ export const StoryCamera: React.FC<StoryCameraProps> = ({
         ) : (
           <div className="flex flex-col items-center gap-3">
             {/* Shutter Button with Animated 15s Progress Ring */}
-            <div className="relative w-24 h-24 flex items-center justify-center">
-              {/* Circular SVG Progress Ring for Long-Press Recording */}
-              <svg className="absolute inset-0 w-24 h-24 -rotate-90 pointer-events-none">
+            <div className="relative w-28 h-28 flex items-center justify-center">
+              {/* Circular SVG 15-second Progress Ring */}
+              <svg className="absolute inset-0 w-28 h-28 -rotate-90 pointer-events-none">
                 {/* Background Ring Track */}
                 <circle
-                  cx="48"
-                  cy="48"
+                  cx="56"
+                  cy="56"
                   r={ringRadius}
                   stroke="rgba(255, 255, 255, 0.25)"
                   strokeWidth={isRecording ? '5' : '3'}
@@ -421,8 +464,8 @@ export const StoryCamera: React.FC<StoryCameraProps> = ({
                 {/* Active Progress Ring */}
                 {isRecording && (
                   <circle
-                    cx="48"
-                    cy="48"
+                    cx="56"
+                    cy="56"
                     r={ringRadius}
                     stroke="#FF3040"
                     strokeWidth="5"
@@ -430,31 +473,62 @@ export const StoryCamera: React.FC<StoryCameraProps> = ({
                     strokeDashoffset={ringOffset}
                     strokeLinecap="round"
                     fill="none"
-                    className="transition-all duration-75"
+                    className="transition-all duration-75 ease-linear"
                   />
                 )}
               </svg>
 
-              {/* Shutter Button Core */}
+              {/* Shutter Button Core (Touch & Mouse with ContextMenu prevention) */}
               <button
                 type="button"
                 id="camera-shutter-btn"
-                onPointerDown={handleShutterPointerDown}
-                onPointerUp={handleShutterPointerUp}
-                onPointerCancel={handleShutterPointerCancel}
+                onTouchStart={(e) => {
+                  isTouchRef.current = true;
+                  handleShutterStart(e);
+                }}
+                onTouchEnd={(e) => {
+                  handleShutterEnd(e);
+                  setTimeout(() => {
+                    isTouchRef.current = false;
+                  }, 400);
+                }}
+                onTouchCancel={handleShutterCancel}
+                onTouchMove={(e) => {
+                  // Prevent touch drag scrolling or browser context gesture
+                  e.preventDefault();
+                }}
+                onMouseDown={(e) => {
+                  if (isTouchRef.current) return;
+                  if (e.button !== 0) return;
+                  handleShutterStart(e);
+                }}
+                onMouseUp={(e) => {
+                  if (isTouchRef.current) return;
+                  handleShutterEnd(e);
+                }}
+                onMouseLeave={(e) => {
+                  if (isTouchRef.current) return;
+                  handleShutterCancel(e);
+                }}
+                onContextMenu={(e) => {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  return false;
+                }}
                 disabled={hasPermission === false}
+                style={{ touchAction: 'none', WebkitTouchCallout: 'none', userSelect: 'none' }}
                 className={`relative rounded-full flex items-center justify-center cursor-pointer select-none transition-all duration-200 outline-none ${
                   isRecording
-                    ? 'w-16 h-16 bg-red-600 scale-110 shadow-2xl shadow-red-500/50'
-                    : 'w-18 h-18 bg-white hover:bg-zinc-100 active:scale-95 shadow-xl'
+                    ? 'w-18 h-18 bg-red-600 scale-110 shadow-2xl shadow-red-500/60 ring-4 ring-red-500/30'
+                    : 'w-20 h-20 bg-white hover:bg-zinc-100 active:scale-95 shadow-xl'
                 } disabled:opacity-30 disabled:pointer-events-none`}
-                title="Tap to take photo, Hold to record video (max 15s)"
+                title="Tap for photo • Hold 300ms for 15s video"
               >
                 <div
                   className={`transition-all duration-200 ${
                     isRecording
-                      ? 'w-6 h-6 bg-white rounded-sm'
-                      : 'w-14 h-14 rounded-full border-2 border-zinc-900/10'
+                      ? 'w-6 h-6 bg-white rounded-md'
+                      : 'w-16 h-16 rounded-full border-2 border-zinc-900/10'
                   }`}
                 />
               </button>
@@ -463,7 +537,10 @@ export const StoryCamera: React.FC<StoryCameraProps> = ({
             {/* Instruction Tip */}
             <p className="text-[11px] text-zinc-400 font-medium tracking-wide">
               {isRecording ? (
-                <span className="text-red-400 font-semibold">Recording... Release to finish</span>
+                <span className="text-red-400 font-bold flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-red-500 animate-ping" />
+                  Recording video... Release finger to finish
+                </span>
               ) : (
                 'Tap for photo • Hold for video (15s)'
               )}

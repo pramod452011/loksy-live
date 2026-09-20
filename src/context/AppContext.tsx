@@ -24,6 +24,7 @@ import {
   saveMediaRecord,
   deleteStoredMedia,
   sanitizeUrlForFirestore,
+  cleanForFirestore,
   DEFAULT_FALLBACK_IMAGE,
   DEFAULT_FALLBACK_VIDEO,
   DEFAULT_FALLBACK_THUMB,
@@ -110,7 +111,10 @@ interface AppContextType {
       originalVolume?: number;
       musicVolume?: number;
       mediaType?: 'image' | 'video';
-    }
+    } | number,
+    legacyClipDuration?: number,
+    legacyOriginalVolume?: number,
+    legacyMusicVolume?: number
   ) => void;
   activeStoryGroup: StoryGroup | null;
   activeStoryIndex: number;
@@ -1173,7 +1177,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       try {
         // ALWAYS sanitize Firestore document to avoid 1MB document limit:
         // Strip data URLs, blob URLs, and large strings from all media fields
-        const firestorePost = {
+        const firestorePost = cleanForFirestore({
           ...newPost,
           mediaUrl: sanitizeUrlForFirestore(
             newPost.mediaUrl,
@@ -1182,7 +1186,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           thumbnailUrl: sanitizeUrlForFirestore(newPost.thumbnailUrl, DEFAULT_FALLBACK_THUMB),
           localMediaKey: mediaKey,
           copyrightClaim: initialClaim,
-        };
+        });
 
         await setDoc(doc(db, 'posts', postId), firestorePost);
         await setDoc(
@@ -1312,15 +1316,20 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       originalVolume?: number;
       musicVolume?: number;
       mediaType?: 'image' | 'video';
-    }
+    } | number,
+    legacyClipDuration?: number,
+    legacyOriginalVolume?: number,
+    legacyMusicVolume?: number
   ) => {
     const storyId = `story_${Date.now()}`;
     const timestamp = Date.now();
-    const isVideo = audioOptions?.mediaType === 'video' || Boolean(mediaUrl && mediaUrl.match(/\.(mp4|webm|mov)$/i));
-    const audioStartTime = audioOptions?.audioStartTime ?? music?.audioStartTime ?? 0;
-    const clipDuration = audioOptions?.clipDuration ?? music?.clipDuration ?? 15;
-    const originalVolume = audioOptions?.originalVolume ?? music?.originalVolume ?? 100;
-    const musicVolume = audioOptions?.musicVolume ?? music?.musicVolume ?? 90;
+    const isAudioOptionsNum = typeof audioOptions === 'number';
+    const audioStartTime = isAudioOptionsNum ? audioOptions : (audioOptions?.audioStartTime ?? music?.audioStartTime ?? 0);
+    const clipDuration = isAudioOptionsNum ? (legacyClipDuration ?? 15) : (audioOptions?.clipDuration ?? music?.clipDuration ?? 15);
+    const originalVolume = isAudioOptionsNum ? (legacyOriginalVolume ?? 100) : (audioOptions?.originalVolume ?? music?.originalVolume ?? 100);
+    const musicVolume = isAudioOptionsNum ? (legacyMusicVolume ?? 90) : (audioOptions?.musicVolume ?? music?.musicVolume ?? 90);
+    const explicitMediaType = !isAudioOptionsNum ? audioOptions?.mediaType : undefined;
+    const isVideo = explicitMediaType === 'video' || Boolean(mediaUrl && mediaUrl.match(/\.(mp4|webm|mov)$/i));
 
     if (mediaUrl && (mediaUrl.startsWith('data:') || mediaUrl.startsWith('blob:'))) {
       try {
@@ -1338,7 +1347,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       musicVolume,
     } : undefined;
 
-    const newStoryDoc = {
+    const newStoryDoc = cleanForFirestore({
       id: storyId,
       userId: currentUser.id,
       username: currentUser.username,
@@ -1356,12 +1365,12 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       createdAt: 'Just now',
       createdAtTimestamp: timestamp,
       duration: clipDuration || 15,
-      music: storyMusic,
+      ...(storyMusic ? { music: cleanForFirestore(storyMusic) } : {}),
       audioStartTime,
       clipDuration,
       originalVolume,
       musicVolume,
-    };
+    });
 
     const newStory = {
       id: storyId,
@@ -1630,13 +1639,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
     if (db) {
       try {
-        const firestoreReel = {
+        const firestoreReel = cleanForFirestore({
           ...newReel,
           videoUrl: sanitizeUrlForFirestore(newReel.videoUrl, DEFAULT_FALLBACK_VIDEO),
           thumbnailUrl: sanitizeUrlForFirestore(newReel.thumbnailUrl, DEFAULT_FALLBACK_THUMB),
           localMediaKey: mediaKey,
           copyrightClaim: initialClaim,
-        };
+        });
 
         await setDoc(doc(db, 'reels', reelId), firestoreReel);
         await setDoc(

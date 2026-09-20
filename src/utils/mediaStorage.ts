@@ -62,6 +62,44 @@ export function sanitizeUrlForFirestore(url?: string | null, fallbackUrl: string
 }
 
 /**
+ * Recursively cleans an object or array for Firestore:
+ * 1. Strips any properties where value === undefined (Firestore throws an error on `undefined`).
+ * 2. Recursively sanitizes nested objects and arrays.
+ * 3. Preserves null, boolean, number, string, Date, and Firestore FieldValues.
+ */
+export function cleanForFirestore<T>(data: T): T {
+  if (data === null || data === undefined) {
+    return null as unknown as T;
+  }
+  if (Array.isArray(data)) {
+    return data
+      .filter((item) => item !== undefined)
+      .map((item) => cleanForFirestore(item)) as unknown as T;
+  }
+  if (typeof data === 'object') {
+    if (data instanceof Date) {
+      return data;
+    }
+    // If it's a special Firestore FieldValue (e.g., increment, serverTimestamp), preserve it
+    if (
+      '_methodName' in (data as any) ||
+      (data as any).constructor?.name === 'FieldValue' ||
+      (data as any)._delegate !== undefined
+    ) {
+      return data;
+    }
+    const cleaned: Record<string, any> = {};
+    for (const [key, value] of Object.entries(data as Record<string, any>)) {
+      if (value !== undefined) {
+        cleaned[key] = cleanForFirestore(value);
+      }
+    }
+    return cleaned as T;
+  }
+  return data;
+}
+
+/**
  * Checks if a post mediaUrl is corrupted (empty, hotlink-blocked mixkit, or expired session blob)
  */
 export function isMediaCorrupted(mediaUrl?: string | null): boolean {

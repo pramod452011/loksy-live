@@ -68,69 +68,131 @@ export interface StoryEditorProps {
   onDiscard?: () => void;
 }
 
-// Curated Royalty-Free Library with playable audio previews
-export const ROYALTY_FREE_AUDIO_TRACKS: MusicTrack[] = [
+// Curated Popular Hindi & Bhojpuri Hits with playable audio preview streams
+export const POPULAR_DESI_STORY_SONGS: MusicTrack[] = [
   {
-    id: 'rf_lofi_chai',
-    title: 'Chai & Chill Beats',
-    artist: 'LOKSY Originals',
-    album: 'Desi Monsoon Lofi',
-    genre: 'Lofi Chill',
+    id: 'song_dilwa_ke_raja',
+    title: 'Dilwa Ke Raja',
+    artist: 'Khesari Lal Yadav, Shilpi Raj',
+    album: 'Bhojpuri Dhamaka 2026',
+    genre: 'Bhojpuri Hits',
     duration: 30,
-    coverUrl: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&auto=format&fit=crop&q=80',
-    audioUrl: SAMPLE_AUDIO_PREVIEWS.hindiLofi,
-  },
-  {
-    id: 'rf_mumbai_monsoon',
-    title: 'Mumbai Monsoon Beats',
-    artist: 'Desi Beat Lab',
-    album: 'Streets of Bombay',
-    genre: 'Urban Folk',
-    duration: 30,
-    coverUrl: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400&auto=format&fit=crop&q=80',
+    coverUrl: 'https://images.unsplash.com/photo-1459749411175-04bf5292ceea?w=400&auto=format&fit=crop&q=80',
     audioUrl: SAMPLE_AUDIO_PREVIEWS.bhojpuriBeat,
   },
   {
-    id: 'rf_sitar_twilight',
-    title: 'Sitar Twilight Melody',
-    artist: 'Raga Wave Collective',
-    album: 'Classical Heritage',
-    genre: 'Ambient Indian',
+    id: 'song_lollipop_lagelu',
+    title: 'Lollipop Lagelu',
+    artist: 'Pawan Singh',
+    album: 'Bhojpuri Superhit',
+    genre: 'Bhojpuri Anthem',
     duration: 30,
-    coverUrl: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=400&auto=format&fit=crop&q=80',
-    audioUrl: SAMPLE_AUDIO_PREVIEWS.sitarClassical,
+    coverUrl: 'https://images.unsplash.com/photo-1516450360452-9312f5e86fc7?w=400&auto=format&fit=crop&q=80',
+    audioUrl: SAMPLE_AUDIO_PREVIEWS.bhojpuriBeat,
   },
   {
-    id: 'rf_acoustic_serenade',
-    title: 'Jaipur Acoustic Breeze',
-    artist: 'Pink City Strings',
-    album: 'Rajasthan Acoustic',
-    genre: 'Acoustic Folk',
+    id: 'song_bhojpuri_thumka',
+    title: 'Bhojpuri Thumka',
+    artist: 'Khesari Lal Yadav, Priyanka Singh',
+    album: 'Nathuniya Beat',
+    genre: 'Bhojpuri Dance',
+    duration: 30,
+    coverUrl: 'https://images.unsplash.com/photo-1492684223066-81342ee5ff30?w=400&auto=format&fit=crop&q=80',
+    audioUrl: SAMPLE_AUDIO_PREVIEWS.danceDholak,
+  },
+  {
+    id: 'song_desi_beat_2026',
+    title: 'Desi Beat 2026',
+    artist: 'DJ Snake x Desi Beat Lab',
+    album: 'Club Party Mix',
+    genre: 'Desi Dance EDM',
+    duration: 30,
+    coverUrl: 'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?w=400&auto=format&fit=crop&q=80',
+    audioUrl: SAMPLE_AUDIO_PREVIEWS.punjabiBhangra,
+  },
+  {
+    id: 'song_acoustic_romantic',
+    title: 'Acoustic Romantic',
+    artist: 'Arijit Singh, Jasleen Royal',
+    album: 'Monsoon Serenade',
+    genre: 'Hindi Romantic',
     duration: 30,
     coverUrl: 'https://images.unsplash.com/photo-1493225457124-a3eb161ffa5f?w=400&auto=format&fit=crop&q=80',
     audioUrl: SAMPLE_AUDIO_PREVIEWS.romanticAcoustic,
   },
   {
-    id: 'rf_punjabi_dhol',
-    title: 'Bhangra Dholak Surge',
-    artist: 'Punjab Rhythm Kings',
-    album: 'Desi Energy Vol. 1',
-    genre: 'Punjabi Folk',
+    id: 'song_dhibri_me_tel',
+    title: 'Dhibri Me Rahuye Na Tel',
+    artist: 'Pawan Singh, Shilpi Raj',
+    album: 'Crack Fighter Hits',
+    genre: 'Bhojpuri Folk',
     duration: 30,
-    coverUrl: 'https://images.unsplash.com/photo-1511379938547-c1f69419868d?w=400&auto=format&fit=crop&q=80',
+    coverUrl: 'https://images.unsplash.com/photo-1506157786151-b8491531f063?w=400&auto=format&fit=crop&q=80',
+    audioUrl: SAMPLE_AUDIO_PREVIEWS.bhojpuriBeat,
+  },
+  {
+    id: 'song_chaleya_jawan',
+    title: 'Chaleya',
+    artist: 'Anirudh Ravichander, Arijit Singh, Shilpa Rao',
+    album: 'Jawan Blockbuster',
+    genre: 'Trending Hindi',
+    duration: 30,
+    coverUrl: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?w=400&auto=format&fit=crop&q=80',
+    audioUrl: SAMPLE_AUDIO_PREVIEWS.hindiLofi,
+  },
+  {
+    id: 'song_kesariya',
+    title: 'Kesariya (Love Raga)',
+    artist: 'Pritam, Arijit Singh',
+    album: 'Brahmāstra',
+    genre: 'Hindi Melodic',
+    duration: 30,
+    coverUrl: 'https://images.unsplash.com/photo-1511671782779-c97d3d27a1d4?w=400&auto=format&fit=crop&q=80',
+    audioUrl: SAMPLE_AUDIO_PREVIEWS.romanticAcoustic,
+  },
+  {
+    id: 'song_kala_chashma',
+    title: 'Kala Chashma Dhol',
+    artist: 'Amar Arshi, Badshah, Neha Kakkar',
+    album: 'Baar Baar Dekho',
+    genre: 'Bollywood Party',
+    duration: 30,
+    coverUrl: 'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?w=400&auto=format&fit=crop&q=80',
+    audioUrl: SAMPLE_AUDIO_PREVIEWS.danceDholak,
+  },
+  {
+    id: 'song_tauba_tauba',
+    title: 'Tauba Tauba Beat',
+    artist: 'Karan Aujla',
+    album: 'Bad Newz Anthem',
+    genre: 'Punjabi Dance',
+    duration: 30,
+    coverUrl: 'https://images.unsplash.com/photo-1520523839898-507125cd53c1?w=400&auto=format&fit=crop&q=80',
     audioUrl: SAMPLE_AUDIO_PREVIEWS.punjabiBhangra,
   },
   {
-    id: 'rf_dholak_celebration',
-    title: 'Festive Dholak Groove',
-    artist: 'Folk Vibes India',
-    album: 'Carnival Nights',
-    genre: 'Festive Dance',
+    id: 'song_kamariya_lolipop',
+    title: 'Kamariya Bole Lolipop',
+    artist: 'Pawan Singh, Akshara Singh',
+    album: 'Pawan Raja',
+    genre: 'Bhojpuri Hits',
     duration: 30,
-    coverUrl: 'https://images.unsplash.com/photo-1465847899084-d164df4dedc6?w=400&auto=format&fit=crop&q=80',
-    audioUrl: SAMPLE_AUDIO_PREVIEWS.danceDholak,
+    coverUrl: 'https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?w=400&auto=format&fit=crop&q=80',
+    audioUrl: SAMPLE_AUDIO_PREVIEWS.bhojpuriBeat,
+  },
+  {
+    id: 'song_brown_munde',
+    title: 'Brown Munde Desi Drill',
+    artist: 'AP Dhillon, Gurinder Gill',
+    album: 'Brown Munde EP',
+    genre: 'Punjabi Hip Hop',
+    duration: 30,
+    coverUrl: 'https://images.unsplash.com/photo-1509198397868-475647b2a1e5?w=400&auto=format&fit=crop&q=80',
+    audioUrl: SAMPLE_AUDIO_PREVIEWS.punjabiBhangra,
   },
 ];
+
+export const ROYALTY_FREE_AUDIO_TRACKS: MusicTrack[] = POPULAR_DESI_STORY_SONGS;
 
 const RICH_EMOJI_PRESETS = [
   '🔥',
@@ -263,6 +325,7 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
   const [selectedMusic, setSelectedMusic] = useState<MusicTrack | null>(null);
   const [showMusicModal, setShowMusicModal] = useState<boolean>(false);
   const [musicSearchQuery, setMusicSearchQuery] = useState<string>('');
+  const [selectedGenreFilter, setSelectedGenreFilter] = useState<string>('All');
   const [previewPlayingTrackId, setPreviewPlayingTrackId] = useState<string | null>(null);
 
   // Music Badge Canvas Position & Dragging
@@ -760,17 +823,30 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
     return { backgroundColor: color, color: '#FFFFFF' };
   };
 
-  // Filtered royalty-free tracks in music picker
+  // Filtered popular tracks in music picker
   const filteredMusicTracks = useMemo(() => {
+    let list = ROYALTY_FREE_AUDIO_TRACKS;
+    if (selectedGenreFilter !== 'All') {
+      list = list.filter((t) => {
+        const g = (t.genre || '').toLowerCase();
+        if (selectedGenreFilter === 'Bhojpuri') return g.includes('bhojpuri');
+        if (selectedGenreFilter === 'Hindi') return g.includes('hindi') || g.includes('bollywood');
+        if (selectedGenreFilter === 'Dance') return g.includes('dance') || g.includes('edm') || g.includes('party') || g.includes('punjabi');
+        if (selectedGenreFilter === 'Romantic') return g.includes('romantic') || g.includes('melodic');
+        return true;
+      });
+    }
+
     const query = musicSearchQuery.toLowerCase().trim();
-    if (!query) return ROYALTY_FREE_AUDIO_TRACKS;
-    return ROYALTY_FREE_AUDIO_TRACKS.filter(
+    if (!query) return list;
+    return list.filter(
       (t) =>
         t.title.toLowerCase().includes(query) ||
         t.artist.toLowerCase().includes(query) ||
+        (t.album && t.album.toLowerCase().includes(query)) ||
         (t.genre && t.genre.toLowerCase().includes(query))
     );
-  }, [musicSearchQuery]);
+  }, [musicSearchQuery, selectedGenreFilter]);
 
   // Suggested users for mention tag
   const suggestedUsers = useMemo(() => {
@@ -939,7 +1015,7 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
             </div>
           )}
 
-          {/* DRAGGABLE ANIMATED MUSIC BADGE ON CANVAS */}
+          {/* DRAGGABLE ANIMATED INSTAGRAM-STYLE MUSIC BADGE ON CANVAS */}
           {selectedMusic && (
             <div
               id="story-editor-draggable-music-badge"
@@ -951,47 +1027,58 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
                 left: `${musicBadgePos.x}%`,
                 top: `${musicBadgePos.y}%`,
                 transform: 'translate(-50%, -50%)',
+                touchAction: 'none',
               }}
               className="absolute z-30 cursor-grab active:cursor-grabbing select-none group active:scale-105 transition-transform"
-              title="Drag music badge anywhere • Tap to change track"
+              title="Drag song badge anywhere • Tap to change song"
             >
-              <div className="relative flex items-center gap-2.5 px-3.5 py-2 rounded-2xl bg-black/75 hover:bg-black/85 backdrop-blur-xl border border-white/20 text-white shadow-2xl max-w-[240px]">
-                {/* Album Cover Thumbnail */}
-                <div className="relative w-8 h-8 rounded-lg overflow-hidden shrink-0 border border-white/20 shadow-md">
-                  <img
-                    src={selectedMusic.coverUrl}
-                    alt={selectedMusic.title}
-                    className="w-full h-full object-cover"
-                  />
-                  <div className="absolute inset-0 bg-black/20 flex items-center justify-center">
-                    <Disc3 className="w-4 h-4 text-white/90 animate-spin" style={{ animationDuration: '4s' }} />
+              <div className="relative flex items-center gap-3 px-3.5 py-2 rounded-full bg-black/80 hover:bg-black/90 backdrop-blur-2xl border border-white/20 text-white shadow-2xl max-w-[280px]">
+                {/* Instagram Spinning Vinyl Disc */}
+                <div
+                  className="relative w-10 h-10 rounded-full bg-zinc-950 border border-zinc-700/80 shadow-lg flex items-center justify-center shrink-0 animate-spin"
+                  style={{ animationDuration: '3.5s' }}
+                >
+                  {/* Concentric vinyl groove rings */}
+                  <div className="absolute inset-1 rounded-full border border-zinc-800 pointer-events-none" />
+                  <div className="absolute inset-2 rounded-full border border-zinc-800/80 pointer-events-none" />
+                  <div className="absolute inset-2.5 rounded-full border border-zinc-700/50 pointer-events-none" />
+
+                  {/* Center Album Label Artwork */}
+                  <div className="relative w-5 h-5 rounded-full overflow-hidden border border-white/50 shadow-inner">
+                    <img
+                      src={selectedMusic.coverUrl}
+                      alt={selectedMusic.title}
+                      className="w-full h-full object-cover"
+                    />
+                    {/* Vinyl Center Hole */}
+                    <div className="absolute inset-0 m-auto w-1.5 h-1.5 rounded-full bg-zinc-950 border border-white/70" />
                   </div>
                 </div>
 
-                {/* Track Title & Artist */}
+                {/* Song Title & Artist */}
                 <div className="flex-1 min-w-0 pr-1">
-                  <p className="text-xs font-bold truncate text-white leading-tight">
+                  <p className="text-xs font-black truncate text-white leading-tight tracking-tight">
                     {selectedMusic.title}
                   </p>
-                  <p className="text-[10px] text-zinc-300 truncate">
+                  <p className="text-[10px] text-zinc-300 font-medium truncate">
                     {selectedMusic.artist}
                   </p>
                 </div>
 
-                {/* Animated Equalizer Wave Bars */}
-                <div className="flex items-end gap-0.5 h-3.5 px-0.5 shrink-0" title="Audio playing">
-                  <span className="w-0.5 bg-[#00E5FF] rounded-full animate-[pulse_0.6s_ease-in-out_infinite] h-full" />
-                  <span className="w-0.5 bg-[#00E5FF] rounded-full animate-[pulse_0.8s_ease-in-out_infinite_0.2s] h-2/3" />
-                  <span className="w-0.5 bg-[#00E5FF] rounded-full animate-[pulse_0.5s_ease-in-out_infinite_0.4s] h-4/5" />
-                  <span className="w-0.5 bg-[#00E5FF] rounded-full animate-[pulse_0.7s_ease-in-out_infinite_0.1s] h-1/2" />
+                {/* Animated Sound Wave Equalizer Bars */}
+                <div className="flex items-end gap-0.5 h-4 px-1 shrink-0" title="Audio playing">
+                  <span className="w-0.5 bg-gradient-to-t from-pink-500 to-[#00E5FF] rounded-full animate-[pulse_0.6s_ease-in-out_infinite] h-full" />
+                  <span className="w-0.5 bg-gradient-to-t from-pink-500 to-[#00E5FF] rounded-full animate-[pulse_0.8s_ease-in-out_infinite_0.15s] h-3/4" />
+                  <span className="w-0.5 bg-gradient-to-t from-pink-500 to-[#00E5FF] rounded-full animate-[pulse_0.5s_ease-in-out_infinite_0.3s] h-full" />
+                  <span className="w-0.5 bg-gradient-to-t from-pink-500 to-[#00E5FF] rounded-full animate-[pulse_0.7s_ease-in-out_infinite_0.1s] h-1/2" />
                 </div>
 
-                {/* Remove Music Track Button on Hover */}
+                {/* Quick Remove Button */}
                 <button
                   type="button"
                   onClick={handleRemoveMusicTrack}
-                  className="absolute -top-2 -right-2 w-5 h-5 rounded-full bg-black/80 hover:bg-red-600 text-white flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity shadow-md cursor-pointer border border-white/20"
-                  title="Remove music track"
+                  className="absolute -top-1.5 -right-1.5 w-5 h-5 rounded-full bg-zinc-900/90 hover:bg-red-600 text-white flex items-center justify-center transition-all shadow-md cursor-pointer border border-white/30 active:scale-90"
+                  title="Remove song"
                 >
                   <X className="w-3 h-3" />
                 </button>
@@ -1099,8 +1186,8 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
               </div>
 
               {/* Search Bar */}
-              <div className="my-3">
-                <div className="flex items-center gap-2 px-3.5 py-2.5 rounded-xl bg-white/10 border border-white/15 focus-within:border-[#0095F6] transition-colors">
+              <div className="my-2">
+                <div className="flex items-center gap-2 px-3.5 py-2 rounded-xl bg-white/10 border border-white/15 focus-within:border-[#0095F6] transition-colors">
                   <Search className="w-4 h-4 text-zinc-400 shrink-0" />
                   <input
                     type="text"
@@ -1119,6 +1206,33 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
                     </button>
                   )}
                 </div>
+              </div>
+
+              {/* Genre Quick Filter Chips */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-2 scrollbar-none">
+                {[
+                  { id: 'All', label: '🔥 All Hits' },
+                  { id: 'Bhojpuri', label: '💥 Bhojpuri Hits' },
+                  { id: 'Hindi', label: '✨ Bollywood' },
+                  { id: 'Dance', label: '🥁 Desi Dance' },
+                  { id: 'Romantic', label: '🎸 Romantic' },
+                ].map((category) => {
+                  const isActive = selectedGenreFilter === category.id;
+                  return (
+                    <button
+                      key={category.id}
+                      type="button"
+                      onClick={() => setSelectedGenreFilter(category.id)}
+                      className={`px-3 py-1 rounded-full text-xs font-bold whitespace-nowrap transition-all cursor-pointer ${
+                        isActive
+                          ? 'bg-gradient-to-r from-pink-500 to-purple-600 text-white shadow-md'
+                          : 'bg-white/10 text-zinc-300 hover:bg-white/15 hover:text-white'
+                      }`}
+                    >
+                      {category.label}
+                    </button>
+                  );
+                })}
               </div>
 
               {/* Currently Selected Track Info Banner if any */}

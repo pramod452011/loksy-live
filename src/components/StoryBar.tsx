@@ -55,7 +55,13 @@ export const StoryBar: React.FC = () => {
       musicVolume,
       originalVolume: 100,
     } : undefined;
-    addStory(finalUrl, newCaption, finalTrack, audioStartTime, clipDuration, 100, musicVolume);
+    addStory(finalUrl, newCaption, finalTrack, {
+      audioStartTime,
+      clipDuration,
+      originalVolume: 100,
+      musicVolume,
+      mediaType: 'image',
+    });
     setIsAddModalOpen(false);
     setNewCaption('');
     setCustomImageUrl('');
