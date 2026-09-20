@@ -1962,6 +1962,27 @@ export const CreateModal: React.FC = () => {
                 </div>
               )}
 
+              {/* Also share to Feed (Reel setting) */}
+              {activeType === 'reel' && (
+                <div className="p-3.5 border-b border-white/5 flex items-center justify-between">
+                  <div className="pr-3">
+                    <span className="text-xs font-bold text-white block">Also share to Feed</span>
+                    <p className="text-[10px] text-gray-400 leading-snug mt-0.5">
+                      Your reel will appear on your main profile grid and in the home feed.
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                    <input
+                      type="checkbox"
+                      checked={alsoShareToFeed}
+                      onChange={(e) => setAlsoShareToFeed(e.target.checked)}
+                      className="sr-only peer"
+                    />
+                    <div className="w-9 h-5 bg-white/10 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:rounded-full after:h-4 after:w-4 after:transition-all peer-checked:bg-[#0095F6]" />
+                  </label>
+                </div>
+              )}
+
               {/* AI Info Disclosure Toggle (Instagram official requirement) */}
               <div className="p-3.5 border-b border-white/5 flex items-center justify-between bg-cyan-500/[0.03]">
                 <div className="pr-3">
