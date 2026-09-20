@@ -1,6 +1,7 @@
 import React, { useEffect, useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
 import { soundManager } from '../utils/audioEngine';
+import { STORY_FILTERS } from './StoryEditor';
 import {
   X,
   Heart,
@@ -13,10 +14,16 @@ import {
   Volume2,
   VolumeX,
   Music,
+  MoreVertical,
+  Trash2,
+  Download,
+  AlertTriangle,
 } from 'lucide-react';
 
 export const StoryViewerModal: React.FC = () => {
   const {
+    currentUser,
+    deleteStory,
     activeStoryGroup,
     activeStoryIndex,
     closeStoryViewer,
@@ -31,6 +38,9 @@ export const StoryViewerModal: React.FC = () => {
   const [progress, setProgress] = useState(0);
   const [replyText, setReplyText] = useState('');
   const [isLiked, setIsLiked] = useState(false);
+  const [isMenuOpen, setIsMenuOpen] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [isDeleting, setIsDeleting] = useState(false);
   const videoRef = useRef<HTMLVideoElement>(null);
   const musicAudioRef = useRef<HTMLAudioElement | null>(null);
 
@@ -51,6 +61,8 @@ export const StoryViewerModal: React.FC = () => {
     setIsLiked(false);
     setReplyText('');
     setIsPaused(false);
+    setIsMenuOpen(false);
+    setShowDeleteConfirm(false);
     stopStoryMusic();
 
     if (videoRef.current) {
@@ -230,6 +242,73 @@ export const StoryViewerModal: React.FC = () => {
   };
 
   const isVideoStory = currentStory.mediaType === 'video';
+  const storyFilterCss = currentStory.filter
+    ? (STORY_FILTERS.find((f) => f.id === currentStory.filter)?.css || 'none')
+    : 'none';
+  const isMyStory = Boolean(
+    (currentUser && activeStoryGroup?.userId === currentUser.id) ||
+    (currentUser && (currentStory as { userId?: string })?.userId === currentUser.id)
+  );
+
+  const handleSaveToDevice = async () => {
+    if (!currentStory?.mediaUrl) return;
+    try {
+      showToast('Preparing download...');
+      const ext = currentStory.mediaType === 'video' ? 'mp4' : 'jpg';
+      const fileName = `loksy_story_${currentStory.id || Date.now()}.${ext}`;
+
+      if (currentStory.mediaUrl.startsWith('data:')) {
+        const link = document.createElement('a');
+        link.href = currentStory.mediaUrl;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        showToast('Story saved to device!');
+      } else {
+        const res = await fetch(currentStory.mediaUrl, { mode: 'cors' });
+        const blob = await res.blob();
+        const blobUrl = URL.createObjectURL(blob);
+        const link = document.createElement('a');
+        link.href = blobUrl;
+        link.download = fileName;
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(() => URL.revokeObjectURL(blobUrl), 2000);
+        showToast('Story saved to device!');
+      }
+    } catch (err) {
+      console.warn('Direct blob download failed, falling back to direct link:', err);
+      const link = document.createElement('a');
+      link.href = currentStory.mediaUrl;
+      link.target = '_blank';
+      link.download = `loksy_story_${Date.now()}.${currentStory.mediaType === 'video' ? 'mp4' : 'jpg'}`;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      showToast('Story download started!');
+    } finally {
+      setIsMenuOpen(false);
+      setIsPaused(false);
+    }
+  };
+
+  const handleConfirmDelete = async () => {
+    if (!currentStory?.id) return;
+    try {
+      setIsDeleting(true);
+      await deleteStory(currentStory.id);
+      setIsMenuOpen(false);
+      setShowDeleteConfirm(false);
+      setIsPaused(false);
+    } catch (err) {
+      console.error('Delete story failed:', err);
+      showToast('Could not delete story');
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   return (
     <div
@@ -260,6 +339,7 @@ export const StoryViewerModal: React.FC = () => {
             <video
               src={currentStory.mediaUrl}
               className="w-full h-full object-cover blur-2xl opacity-25"
+              style={{ filter: storyFilterCss !== 'none' ? storyFilterCss : undefined }}
               muted
               loop
               playsInline
@@ -269,6 +349,7 @@ export const StoryViewerModal: React.FC = () => {
               src={currentStory.mediaUrl}
               alt=""
               className="w-full h-full object-cover blur-2xl opacity-25"
+              style={{ filter: storyFilterCss !== 'none' ? storyFilterCss : undefined }}
               referrerPolicy="no-referrer"
             />
           )}
@@ -277,16 +358,17 @@ export const StoryViewerModal: React.FC = () => {
         {/* Story Media (Image or Video) with Hold-to-Pause */}
         <div
           className="absolute inset-0 flex items-center justify-center bg-black/40"
-          onMouseDown={() => setIsPaused(true)}
-          onMouseUp={() => setIsPaused(false)}
-          onTouchStart={() => setIsPaused(true)}
-          onTouchEnd={() => setIsPaused(false)}
+          onMouseDown={() => !isMenuOpen && setIsPaused(true)}
+          onMouseUp={() => !isMenuOpen && setIsPaused(false)}
+          onTouchStart={() => !isMenuOpen && setIsPaused(true)}
+          onTouchEnd={() => !isMenuOpen && setIsPaused(false)}
         >
           {isVideoStory ? (
             <video
               ref={videoRef}
               src={currentStory.mediaUrl}
               className="w-full h-full object-cover"
+              style={{ filter: storyFilterCss !== 'none' ? storyFilterCss : undefined }}
               autoPlay
               playsInline
               loop
@@ -298,6 +380,7 @@ export const StoryViewerModal: React.FC = () => {
               src={currentStory.mediaUrl}
               alt="Story content"
               className="w-full h-full object-cover"
+              style={{ filter: storyFilterCss !== 'none' ? storyFilterCss : undefined }}
               referrerPolicy="no-referrer"
             />
           )}
@@ -367,8 +450,27 @@ export const StoryViewerModal: React.FC = () => {
               </div>
             </div>
 
-            {/* Controls: Audio Mute & Close (Exact Instagram Stories style) */}
+            {/* Controls: More Menu (for story owner), Audio Mute & Close */}
             <div className="flex items-center gap-2 shrink-0">
+              {isMyStory && (
+                <button
+                  id="story-more-btn"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setIsPaused(true);
+                    setIsMenuOpen(true);
+                  }}
+                  className={`p-1.5 rounded-full backdrop-blur-md border transition-all cursor-pointer ${
+                    isMenuOpen
+                      ? 'bg-white text-black border-white'
+                      : 'bg-black/60 text-white border-white/10 hover:bg-black/80'
+                  }`}
+                  title="Story options"
+                  aria-label="Story management menu"
+                >
+                  <MoreVertical className="w-4 h-4" />
+                </button>
+              )}
               <button
                 id="story-mute-toggle"
                 onClick={handleToggleMute}
@@ -420,41 +522,201 @@ export const StoryViewerModal: React.FC = () => {
           </div>
         )}
 
-        {/* Bottom Interactive Reply & Send Love Bar */}
+        {/* Bottom Interactive Bar */}
         <div className="relative z-20 pb-6 pt-8 px-4 bg-gradient-to-t from-black/95 via-black/60 to-transparent">
-          <form onSubmit={handleSendReply} className="flex items-center gap-2.5">
-            <div className="flex-1 relative">
-              <input
-                id="story-reply-input"
-                type="text"
-                value={replyText}
-                onChange={(e) => setReplyText(e.target.value)}
-                placeholder={`Reply to ${activeStoryGroup.user.name}...`}
-                className="w-full px-4 py-2.5 rounded-full bg-white/10 border border-white/20 text-white text-sm placeholder-gray-300 backdrop-blur-md focus:outline-none focus:border-[#FF4668]"
-              />
-            </div>
-            {replyText.trim() ? (
-              <button
-                type="submit"
-                className="p-2.5 rounded-full bg-gradient-to-r from-[#FF4668] to-[#FF8A00] text-white shadow-md active:scale-95 transition-transform"
-              >
-                <Send className="w-4 h-4" />
-              </button>
-            ) : (
+          {isMyStory ? (
+            <div className="flex items-center justify-between w-full px-4 py-3 rounded-full bg-black/50 backdrop-blur-md border border-white/15">
+              <span className="text-xs text-gray-300 font-medium">Your Story</span>
               <button
                 type="button"
-                id="story-like-btn"
-                onClick={handleLikeStory}
-                className={`p-2.5 rounded-full backdrop-blur-md border border-white/20 transition-all active:scale-125 ${
-                  isLiked ? 'bg-[#FF4668] text-white border-[#FF4668]' : 'bg-white/10 text-white hover:bg-white/20'
-                }`}
-                title="Send Love"
+                id="story-bottom-more-btn"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  setIsPaused(true);
+                  setIsMenuOpen(true);
+                }}
+                className="flex items-center gap-1.5 text-xs text-white font-medium hover:text-[#00E5FF] transition-colors cursor-pointer"
               >
-                <Heart className={`w-5 h-5 ${isLiked ? 'fill-white' : ''}`} />
+                <MoreVertical className="w-3.5 h-3.5" />
+                <span>Story Options</span>
               </button>
-            )}
-          </form>
+            </div>
+          ) : (
+            <form onSubmit={handleSendReply} className="flex items-center gap-2.5">
+              <div className="flex-1 relative">
+                <input
+                  id="story-reply-input"
+                  type="text"
+                  value={replyText}
+                  onChange={(e) => setReplyText(e.target.value)}
+                  placeholder={`Reply to ${activeStoryGroup.user.name}...`}
+                  className="w-full px-4 py-2.5 rounded-full bg-white/10 border border-white/20 text-white text-sm placeholder-gray-300 backdrop-blur-md focus:outline-none focus:border-[#FF4668]"
+                />
+              </div>
+              {replyText.trim() ? (
+                <button
+                  type="submit"
+                  className="p-2.5 rounded-full bg-gradient-to-r from-[#FF4668] to-[#FF8A00] text-white shadow-md active:scale-95 transition-transform"
+                >
+                  <Send className="w-4 h-4" />
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  id="story-like-btn"
+                  onClick={handleLikeStory}
+                  className={`p-2.5 rounded-full backdrop-blur-md border border-white/20 transition-all active:scale-125 ${
+                    isLiked ? 'bg-[#FF4668] text-white border-[#FF4668]' : 'bg-white/10 text-white hover:bg-white/20'
+                  }`}
+                  title="Send Love"
+                >
+                  <Heart className={`w-5 h-5 ${isLiked ? 'fill-white' : ''}`} />
+                </button>
+              )}
+            </form>
+          )}
         </div>
+
+        {/* Story Management Action Sheet & Confirm Alert Modal */}
+        {isMenuOpen && (
+          <div
+            id="story-menu-backdrop"
+            className="absolute inset-0 z-50 bg-black/75 backdrop-blur-sm flex flex-col justify-end animate-fade-in"
+            onClick={(e) => {
+              e.stopPropagation();
+              if (!isDeleting) {
+                setIsMenuOpen(false);
+                setShowDeleteConfirm(false);
+                setIsPaused(false);
+              }
+            }}
+          >
+            <div
+              id="story-action-sheet"
+              className="w-full bg-[#111625] border-t border-white/15 rounded-t-3xl p-5 pb-8 shadow-2xl space-y-4 select-none"
+              onClick={(e) => e.stopPropagation()}
+            >
+              {/* Drag Pill Handle */}
+              <div className="w-10 h-1 bg-white/20 rounded-full mx-auto" />
+
+              {!showDeleteConfirm ? (
+                <>
+                  {/* Story preview card */}
+                  <div className="flex items-center gap-3 pb-3 border-b border-white/10">
+                    <div className="w-12 h-12 rounded-xl overflow-hidden bg-black/50 border border-white/10 shrink-0">
+                      {isVideoStory ? (
+                        <video
+                          src={currentStory.mediaUrl}
+                          className="w-full h-full object-cover"
+                          muted
+                        />
+                      ) : (
+                        <img
+                          src={currentStory.mediaUrl}
+                          alt=""
+                          className="w-full h-full object-cover"
+                          referrerPolicy="no-referrer"
+                        />
+                      )}
+                    </div>
+                    <div className="min-w-0 flex-1">
+                      <p className="text-white text-sm font-semibold truncate">
+                        {currentStory.caption || 'Your Story'}
+                      </p>
+                      <p className="text-xs text-gray-400">
+                        {currentStory.createdAt} • {isVideoStory ? 'Video' : 'Photo'}
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Actions List */}
+                  <div className="space-y-2">
+                    {/* Save to Device */}
+                    <button
+                      id="story-action-save"
+                      onClick={handleSaveToDevice}
+                      className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-2xl bg-white/5 hover:bg-white/10 active:bg-white/15 text-white transition-all text-left cursor-pointer"
+                    >
+                      <div className="p-2 rounded-xl bg-white/10 text-[#00E5FF] shrink-0">
+                        <Download className="w-5 h-5" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold text-white">Save to Device</div>
+                        <div className="text-xs text-gray-400">Download media file to your gallery</div>
+                      </div>
+                    </button>
+
+                    {/* Delete Story */}
+                    <button
+                      id="story-action-delete"
+                      onClick={() => setShowDeleteConfirm(true)}
+                      className="w-full flex items-center gap-3.5 px-4 py-3.5 rounded-2xl bg-red-500/10 hover:bg-red-500/20 active:bg-red-500/25 border border-red-500/20 text-red-400 transition-all text-left cursor-pointer"
+                    >
+                      <div className="p-2 rounded-xl bg-red-500/20 text-red-400 shrink-0">
+                        <Trash2 className="w-5 h-5" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="text-sm font-semibold text-red-400">Delete Story</div>
+                        <div className="text-xs text-red-300/70">Permanently delete this story from your profile</div>
+                      </div>
+                    </button>
+                  </div>
+
+                  {/* Cancel Button */}
+                  <button
+                    id="story-action-cancel"
+                    onClick={() => {
+                      setIsMenuOpen(false);
+                      setIsPaused(false);
+                    }}
+                    className="w-full py-3 rounded-2xl bg-white/10 hover:bg-white/15 active:bg-white/20 text-gray-300 font-semibold text-sm transition-all cursor-pointer"
+                  >
+                    Cancel
+                  </button>
+                </>
+              ) : (
+                /* Delete Confirmation Alert */
+                <div className="py-2 text-center space-y-4">
+                  <div className="w-12 h-12 rounded-full bg-red-500/20 text-red-400 mx-auto flex items-center justify-center border border-red-500/30">
+                    <AlertTriangle className="w-6 h-6" />
+                  </div>
+                  <div>
+                    <h3 className="text-white font-bold text-base">Delete this story?</h3>
+                    <p className="text-xs text-gray-300 mt-1.5 max-w-xs mx-auto leading-relaxed">
+                      This will permanently remove this story from your profile and Story Bar. It cannot be recovered.
+                    </p>
+                  </div>
+
+                  <div className="grid grid-cols-2 gap-3 pt-2">
+                    <button
+                      id="story-delete-cancel-btn"
+                      disabled={isDeleting}
+                      onClick={() => setShowDeleteConfirm(false)}
+                      className="w-full py-3 rounded-2xl bg-white/10 hover:bg-white/15 text-white font-semibold text-sm transition-all cursor-pointer"
+                    >
+                      Cancel
+                    </button>
+                    <button
+                      id="story-delete-confirm-btn"
+                      disabled={isDeleting}
+                      onClick={handleConfirmDelete}
+                      className="w-full py-3 rounded-2xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 active:scale-95 text-white font-bold text-sm shadow-lg shadow-red-900/40 transition-all flex items-center justify-center gap-2 cursor-pointer disabled:opacity-50"
+                    >
+                      {isDeleting ? (
+                        <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      ) : (
+                        <>
+                          <Trash2 className="w-4 h-4" />
+                          <span>Delete</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

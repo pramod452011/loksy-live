@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useState, useEffect, useCallback, useMemo } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import {
   User,
   Post,
@@ -111,11 +111,13 @@ interface AppContextType {
       originalVolume?: number;
       musicVolume?: number;
       mediaType?: 'image' | 'video';
+      filter?: string;
     } | number,
     legacyClipDuration?: number,
     legacyOriginalVolume?: number,
     legacyMusicVolume?: number
   ) => void;
+  deleteStory: (storyId: string) => Promise<void>;
   activeStoryGroup: StoryGroup | null;
   activeStoryIndex: number;
   openStoryViewer: (userId: string, storyIndex?: number) => void;
@@ -306,6 +308,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     blob?: Blob | null;
     type: 'image' | 'video';
   } | null>(null);
+  const deletedStoryIdsRef = useRef<Set<string>>(new Set());
 
   const [reels, setReels] = useState<Reel[]>([]);
   const [activeReelIndex, setActiveReelIndex] = useState<number>(0);
@@ -597,6 +600,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
           const groupMap = new Map<string, StoryGroup>();
           for (const docSnap of snapshot.docs) {
+            if (deletedStoryIdsRef.current.has(docSnap.id)) continue;
             const data = docSnap.data();
             // Filter only active stories posted within the last 24 hours
             const isWithin24h = !data.createdAtTimestamp || (Date.now() - data.createdAtTimestamp < 24 * 60 * 60 * 1000);
@@ -643,6 +647,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
               clipDuration: data.clipDuration ?? data.music?.clipDuration,
               originalVolume: data.originalVolume ?? data.music?.originalVolume,
               musicVolume: data.musicVolume ?? data.music?.musicVolume,
+              filter: data.filter || undefined,
             });
           }
 
@@ -654,17 +659,23 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
             const mergedList = [...liveStories];
 
             if (prevMeGroup && prevMeGroup.stories.length > 0) {
+              const sanitizedPrevStories = prevMeGroup.stories.filter((s) => !deletedStoryIdsRef.current.has(s.id));
               if (liveMeGroupIndex >= 0) {
                 const liveMeGroup = mergedList[liveMeGroupIndex];
                 const existingStoryIds = new Set(liveMeGroup.stories.map((s) => s.id));
-                const pendingStories = prevMeGroup.stories.filter((s) => !existingStoryIds.has(s.id));
+                const pendingStories = sanitizedPrevStories.filter((s) => !existingStoryIds.has(s.id));
+                const combinedStories = [...pendingStories, ...liveMeGroup.stories].filter((s) => !deletedStoryIdsRef.current.has(s.id));
                 mergedList[liveMeGroupIndex] = {
                   ...liveMeGroup,
-                  hasUnseenStories: prevMeGroup.hasUnseenStories || liveMeGroup.hasUnseenStories,
-                  stories: [...pendingStories, ...liveMeGroup.stories],
+                  hasUnseenStories: combinedStories.length > 0 && (prevMeGroup.hasUnseenStories || liveMeGroup.hasUnseenStories),
+                  stories: combinedStories,
                 };
-              } else {
-                mergedList.unshift(prevMeGroup);
+              } else if (sanitizedPrevStories.length > 0) {
+                mergedList.unshift({
+                  ...prevMeGroup,
+                  stories: sanitizedPrevStories,
+                  hasUnseenStories: sanitizedPrevStories.length > 0,
+                });
               }
             }
 
@@ -1343,6 +1354,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       originalVolume?: number;
       musicVolume?: number;
       mediaType?: 'image' | 'video';
+      filter?: string;
     } | number,
     legacyClipDuration?: number,
     legacyOriginalVolume?: number,
@@ -1356,6 +1368,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     const originalVolume = isAudioOptionsNum ? (legacyOriginalVolume ?? 100) : (audioOptions?.originalVolume ?? music?.originalVolume ?? 100);
     const musicVolume = isAudioOptionsNum ? (legacyMusicVolume ?? 90) : (audioOptions?.musicVolume ?? music?.musicVolume ?? 90);
     const explicitMediaType = !isAudioOptionsNum ? audioOptions?.mediaType : undefined;
+    const storyFilter = !isAudioOptionsNum ? audioOptions?.filter : undefined;
     const isVideo = explicitMediaType === 'video' || Boolean(mediaUrl && mediaUrl.match(/\.(mp4|webm|mov)$/i));
 
     if (mediaUrl && (mediaUrl.startsWith('data:') || mediaUrl.startsWith('blob:'))) {
@@ -1397,6 +1410,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       clipDuration,
       originalVolume,
       musicVolume,
+      ...(storyFilter ? { filter: storyFilter } : {}),
     });
 
     const newStory = {
@@ -1412,6 +1426,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       clipDuration,
       originalVolume,
       musicVolume,
+      filter: storyFilter,
     };
 
     setStories(prev => {
@@ -1462,6 +1477,65 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     setActiveStoryUserId(null);
     setActiveStoryIndex(0);
   }, []);
+
+  const deleteStory = useCallback(
+    async (storyId: string) => {
+      deletedStoryIdsRef.current.add(storyId);
+      deleteStoredMedia(storyId).catch(() => {});
+
+      let remainingCountInTargetGroup = 0;
+      let targetUserId = currentUser.id;
+
+      setStories((prev) => {
+        const groupIdx = prev.findIndex((g) => g.stories && g.stories.some((s) => s.id === storyId));
+        if (groupIdx === -1) {
+          const meIdx = prev.findIndex((g) => g.userId === currentUser.id);
+          if (meIdx === -1) return prev;
+          const updated = [...prev];
+          const filtered = (updated[meIdx].stories || []).filter((s) => s.id !== storyId);
+          remainingCountInTargetGroup = filtered.length;
+          updated[meIdx] = {
+            ...updated[meIdx],
+            stories: filtered,
+            hasUnseenStories: filtered.length > 0 ? updated[meIdx].hasUnseenStories : false,
+          };
+          return updated;
+        }
+
+        targetUserId = prev[groupIdx].userId;
+        const updated = [...prev];
+        const group = updated[groupIdx];
+        const filtered = (group.stories || []).filter((s) => s.id !== storyId);
+        remainingCountInTargetGroup = filtered.length;
+
+        updated[groupIdx] = {
+          ...group,
+          stories: filtered,
+          hasUnseenStories: filtered.length > 0 ? group.hasUnseenStories : false,
+        };
+        return updated;
+      });
+
+      if (db) {
+        try {
+          await deleteDoc(doc(db, 'stories', storyId));
+        } catch (err) {
+          console.warn('[Firestore] deleteStory error:', err);
+        }
+      }
+
+      if (activeStoryUserId === targetUserId) {
+        if (remainingCountInTargetGroup === 0) {
+          closeStoryViewer();
+        } else {
+          setActiveStoryIndex((prev) => Math.min(prev, Math.max(0, remainingCountInTargetGroup - 1)));
+        }
+      }
+
+      showToast('Story deleted');
+    },
+    [currentUser.id, activeStoryUserId, closeStoryViewer, showToast]
+  );
 
   const activeStoryGroup = activeStoryUserId
     ? stories.find(s => s.userId === activeStoryUserId) || null
@@ -2200,6 +2274,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
 
         stories,
         addStory,
+        deleteStory,
         activeStoryGroup,
         activeStoryIndex,
         openStoryViewer,

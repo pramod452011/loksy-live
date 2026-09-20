@@ -101,6 +101,7 @@ export interface StoryItem {
   clipDuration?: number;
   originalVolume?: number;
   musicVolume?: number;
+  filter?: string;
 }
 
 export interface StoryGroup {

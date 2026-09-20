@@ -52,6 +52,20 @@ export interface StoryStickerItem {
   y: number; // percentage 0-100
 }
 
+export interface StoryFilter {
+  id: string;
+  name: string;
+  css: string;
+}
+
+export const STORY_FILTERS: StoryFilter[] = [
+  { id: 'normal', name: 'Normal', css: 'none' },
+  { id: 'vintage', name: 'Vintage', css: 'sepia(0.45) contrast(1.15) brightness(0.95) saturate(1.2)' },
+  { id: 'cinema_teal', name: 'Cinema Teal', css: 'contrast(1.2) saturate(1.15) hue-rotate(175deg) brightness(0.95)' },
+  { id: 'warm_glow', name: 'Warm Glow', css: 'sepia(0.25) saturate(1.4) brightness(1.08) contrast(1.05)' },
+  { id: 'moody_bw', name: 'Moody B&W', css: 'grayscale(1) contrast(1.4) brightness(0.9)' },
+];
+
 export interface StoryEditorProps {
   isOpen: boolean;
   mediaUrl?: string | null;
@@ -68,6 +82,7 @@ export interface StoryEditorProps {
     textOverlay?: string;
     originalVolume?: number;
     musicVolume?: number;
+    filter?: string;
   }) => void;
   onDiscard?: () => void;
 }
@@ -351,6 +366,16 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
   const [showAudioMixerModal, setShowAudioMixerModal] = useState<boolean>(false);
   const [videoAudioVolume, setVideoAudioVolume] = useState<number>(100); // 0 - 100%
   const [musicAudioVolume, setMusicAudioVolume] = useState<number>(100); // 0 - 100%
+
+  // Real-time CSS Color LUT Story Filters state
+  const [currentFilterIndex, setCurrentFilterIndex] = useState<number>(0);
+  const [showFilterPill, setShowFilterPill] = useState<boolean>(false);
+  const filterPillTimerRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Swipe gesture tracking refs for stage preview
+  const swipeTouchStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
+  const swipePointerStartRef = useRef<{ x: number; y: number; time: number } | null>(null);
+  const activeFilter = STORY_FILTERS[currentFilterIndex] || STORY_FILTERS[0];
 
   // Video element ref
   const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -690,6 +715,91 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
   };
 
   // -------------------------------------------------------------
+  // REAL-TIME HORIZONTAL SWIPE STORY FILTERS (Instagram-style)
+  // -------------------------------------------------------------
+  const triggerFilterChange = (direction: 'next' | 'prev') => {
+    setCurrentFilterIndex((prev) => {
+      const total = STORY_FILTERS.length;
+      let nextIndex = prev;
+      if (direction === 'next') {
+        nextIndex = (prev + 1) % total;
+      } else {
+        nextIndex = (prev - 1 + total) % total;
+      }
+      return nextIndex;
+    });
+
+    setShowFilterPill(true);
+    if (filterPillTimerRef.current) {
+      clearTimeout(filterPillTimerRef.current);
+    }
+    filterPillTimerRef.current = setTimeout(() => {
+      setShowFilterPill(false);
+    }, 1800);
+  };
+
+  const handleStageTouchStart = (e: React.TouchEvent) => {
+    if (e.touches.length !== 1) return;
+    const touch = e.touches[0];
+    swipeTouchStartRef.current = {
+      x: touch.clientX,
+      y: touch.clientY,
+      time: Date.now(),
+    };
+  };
+
+  const handleStageTouchEnd = (e: React.TouchEvent) => {
+    if (!swipeTouchStartRef.current) return;
+    const touch = e.changedTouches[0];
+    if (!touch) return;
+
+    const deltaX = touch.clientX - swipeTouchStartRef.current.x;
+    const deltaY = touch.clientY - swipeTouchStartRef.current.y;
+    const elapsed = Date.now() - swipeTouchStartRef.current.time;
+
+    swipeTouchStartRef.current = null;
+
+    // Must be a predominantly horizontal swipe of at least 35px within 600ms
+    if (Math.abs(deltaX) > 35 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2 && elapsed < 600) {
+      if (deltaX < 0) {
+        // Swiped Left -> Next filter
+        triggerFilterChange('next');
+      } else {
+        // Swiped Right -> Previous filter
+        triggerFilterChange('prev');
+      }
+    }
+  };
+
+  const handleStagePointerDown = (e: React.PointerEvent) => {
+    // Only capture primary mouse drag when not tapping on stickers/text
+    if (e.pointerType === 'mouse' && e.button === 0) {
+      swipePointerStartRef.current = {
+        x: e.clientX,
+        y: e.clientY,
+        time: Date.now(),
+      };
+    }
+  };
+
+  const handleStagePointerUp = (e: React.PointerEvent) => {
+    if (!swipePointerStartRef.current) return;
+    const deltaX = e.clientX - swipePointerStartRef.current.x;
+    const deltaY = e.clientY - swipePointerStartRef.current.y;
+    const elapsed = Date.now() - swipePointerStartRef.current.time;
+
+    swipePointerStartRef.current = null;
+
+    if (Math.abs(deltaX) > 40 && Math.abs(deltaX) > Math.abs(deltaY) * 1.2 && elapsed < 600) {
+      if (deltaX < 0) {
+        triggerFilterChange('next');
+      } else {
+        triggerFilterChange('prev');
+      }
+    }
+  };
+
+  // -------------------------------------------------------------
   // MUSIC PREVIEW & SELECT HANDLERS
   // -------------------------------------------------------------
   const handleTogglePreviewPlay = (track: MusicTrack, e: React.MouseEvent) => {
@@ -830,6 +940,7 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
         textOverlay: textItem.text || undefined,
         originalVolume: finalOriginalVol,
         musicVolume: finalMusicVol,
+        filter: activeFilter.id !== 'normal' ? activeFilter.id : undefined,
       });
     } else if (addStory) {
       addStory(
@@ -842,6 +953,7 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
           originalVolume: finalOriginalVol,
           musicVolume: finalMusicVol,
           mediaType: detectedMediaType,
+          filter: activeFilter.id !== 'normal' ? activeFilter.id : undefined,
         }
       );
     }
@@ -1004,6 +1116,21 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
               <PenTool className="w-4 h-4" />
             </button>
 
+            {/* Quick Filter Toggle Button (Swipe or Tap to Cycle) */}
+            <button
+              type="button"
+              id="story-editor-filter-toggle-btn"
+              onClick={() => triggerFilterChange('next')}
+              className={`p-2 rounded-full backdrop-blur-md text-white active:scale-90 transition-all cursor-pointer border ${
+                activeFilter.id !== 'normal'
+                  ? 'bg-gradient-to-tr from-amber-500 to-rose-500 border-amber-300/50 shadow-md'
+                  : 'bg-black/50 hover:bg-black/75 border-white/15'
+              }`}
+              title={`Story Filter: ${activeFilter.name} (Tap or Swipe to change)`}
+            >
+              <Sparkles className="w-4 h-4" />
+            </button>
+
             {/* Music Tool Button (Opens Audio Picker) */}
             <button
               type="button"
@@ -1021,11 +1148,15 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
           </div>
         </div>
 
-        {/* 9:16 Aspect Ratio Media Stage */}
+        {/* 9:16 Aspect Ratio Media Stage with Horizontal Swipe Story Filters */}
         <div
           ref={stageRef}
           id="story-editor-stage"
-          className="relative w-full h-full flex items-center justify-center bg-black overflow-hidden select-none"
+          className="relative w-full h-full flex items-center justify-center bg-black overflow-hidden select-none cursor-grab active:cursor-grabbing touch-pan-y"
+          onTouchStart={handleStageTouchStart}
+          onTouchEnd={handleStageTouchEnd}
+          onPointerDown={handleStagePointerDown}
+          onPointerUp={handleStagePointerUp}
         >
           {detectedMediaType === 'video' ? (
             <video
@@ -1035,13 +1166,15 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
               autoPlay
               loop
               muted={isMuted}
-              className="w-full h-full object-cover pointer-events-none"
+              className="w-full h-full object-cover pointer-events-none transition-[filter] duration-300 ease-out"
+              style={{ filter: activeFilter.css }}
             />
           ) : (
             <img
               src={activeMediaUrl}
               alt="Story Preview"
-              className="w-full h-full object-cover pointer-events-none"
+              className="w-full h-full object-cover pointer-events-none transition-[filter] duration-300 ease-out"
+              style={{ filter: activeFilter.css }}
             />
           )}
 
@@ -2096,6 +2229,29 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
               {activeToolToast}
             </div>
           )}
+
+          {/* Quick Bottom Filter Pill Indicator on Swipe */}
+          <div
+            id="story-editor-filter-pill"
+            className={`absolute bottom-6 left-1/2 -translate-x-1/2 px-4 py-1.5 rounded-full bg-black/70 backdrop-blur-md border border-white/20 text-white flex items-center gap-2 shadow-2xl z-40 pointer-events-none transition-all duration-300 ${
+              showFilterPill
+                ? 'opacity-100 translate-y-0 scale-100'
+                : 'opacity-0 translate-y-2 scale-95 pointer-events-none'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+            <span className="text-xs font-bold tracking-wide uppercase">{activeFilter.name}</span>
+            <div className="flex items-center gap-1 ml-1">
+              {STORY_FILTERS.map((f, i) => (
+                <div
+                  key={f.id}
+                  className={`rounded-full transition-all ${
+                    i === currentFilterIndex ? 'w-2 h-2 bg-white' : 'w-1 h-1 bg-white/40'
+                  }`}
+                />
+              ))}
+            </div>
+          </div>
         </div>
 
         {/* Bottom Bar: Discard & Instagram-Style 'Your Story' / Next */}

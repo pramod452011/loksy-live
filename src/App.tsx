@@ -162,6 +162,7 @@ const MainLayout: React.FC = () => {
               originalVolume: storyData.originalVolume ?? 100,
               musicVolume: storyData.musicVolume ?? 85,
               mediaType: storyData.mediaType,
+              filter: storyData.filter,
             }
           );
           closeStoryEditor();
