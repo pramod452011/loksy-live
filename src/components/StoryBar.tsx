@@ -1,6 +1,6 @@
 import React, { useState, useRef } from 'react';
 import { useApp } from '../context/AppContext';
-import { Plus, Sparkles, Image as ImageIcon, X, Music, Volume2 } from 'lucide-react';
+import { Plus, Sparkles, Image as ImageIcon, X, Music, Volume2, Camera } from 'lucide-react';
 import { MusicTrack } from '../types';
 import { MusicSelectorModal } from './MusicSelectorModal';
 import { MusicTrimmerMixer } from './MusicTrimmerMixer';
@@ -11,6 +11,7 @@ export const StoryBar: React.FC = () => {
     openStoryViewer,
     currentUser,
     addStory,
+    openStoryCamera,
   } = useApp();
 
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
@@ -83,7 +84,7 @@ export const StoryBar: React.FC = () => {
                 if (myStoryGroup && myStoryGroup.stories && myStoryGroup.stories.length > 0) {
                   openStoryViewer(currentUser.id);
                 } else {
-                  setIsAddModalOpen(true);
+                  openStoryCamera();
                 }
               }}
               className={`w-16 h-16 rounded-full p-[2.5px] transition-transform active:scale-95 ${
@@ -107,9 +108,9 @@ export const StoryBar: React.FC = () => {
               id="add-story-btn"
               onClick={(e) => {
                 e.stopPropagation();
-                setIsAddModalOpen(true);
+                openStoryCamera();
               }}
-              className="absolute bottom-0 right-0 w-5 h-5 rounded-full bg-gradient-to-r from-[#FF4668] to-[#FF8A00] text-white flex items-center justify-center border-2 border-[#070A12] shadow-md hover:scale-110 active:scale-95 transition-transform"
+              className="absolute bottom-0 right-0 w-5 h-5 rounded-full bg-gradient-to-r from-[#FF4668] to-[#FF8A00] text-white flex items-center justify-center border-2 border-[#070A12] shadow-md hover:scale-110 active:scale-95 transition-transform cursor-pointer"
               title="Add Story"
             >
               <Plus className="w-3.5 h-3.5 stroke-[3]" />
@@ -178,6 +179,20 @@ export const StoryBar: React.FC = () => {
                 <X className="w-5 h-5" />
               </button>
             </div>
+
+            {/* Launch Camera Quick Action */}
+            <button
+              type="button"
+              id="story-modal-open-camera-btn"
+              onClick={() => {
+                setIsAddModalOpen(false);
+                openStoryCamera();
+              }}
+              className="w-full py-2.5 px-3.5 rounded-xl bg-gradient-to-r from-orange-500 via-pink-600 to-rose-600 hover:brightness-110 text-xs font-bold text-white flex items-center justify-center gap-2 shadow-lg active:scale-95 transition-all cursor-pointer"
+            >
+              <Camera className="w-4 h-4" />
+              <span>Open Story Camera (Take Photo / Video)</span>
+            </button>
 
             {/* Preset Selection */}
             <div>

@@ -11,6 +11,8 @@ import { ShareModal } from './components/ShareModal';
 import { ReportModal } from './components/ReportModal';
 import { FollowListModal } from './screens/FollowListModal';
 import { CreateModal } from './components/CreateModal';
+import { StoryCamera } from './components/StoryCamera';
+import { StoryEditor } from './components/StoryEditor';
 import {
   CopyrightDetailsModal,
   CopyrightGuidelinesModal,
@@ -46,6 +48,17 @@ const MainLayout: React.FC = () => {
     audioTrackModalTrack,
     closeAudioTrackModal,
     openCreateModal,
+    isStoryCameraOpen,
+    closeStoryCamera,
+    openStoryEditor,
+    isStoryEditorOpen,
+    capturedStoryMedia,
+    closeStoryEditor,
+    retakeStory,
+    discardStory,
+    addStory,
+    showToast,
+    navigateTo,
   } = useApp();
 
   // Gated Initial Screen: If no user session is active, the app must default directly to the Sign Up screen (with a toggle to Log In). No public feed access before authentication.
@@ -120,6 +133,42 @@ const MainLayout: React.FC = () => {
       <ReportModal />
       <FollowListModal />
       <CreateModal />
+      <StoryCamera
+        isOpen={isStoryCameraOpen}
+        onClose={closeStoryCamera}
+        onCapturePhoto={(dataUrl) => {
+          openStoryEditor({ url: dataUrl, type: 'image' });
+        }}
+        onCaptureVideo={(videoBlob) => {
+          openStoryEditor({ blob: videoBlob, type: 'video' });
+        }}
+      />
+      <StoryEditor
+        isOpen={isStoryEditorOpen}
+        mediaUrl={capturedStoryMedia?.url}
+        mediaBlob={capturedStoryMedia?.blob}
+        mediaType={capturedStoryMedia?.type}
+        onClose={closeStoryEditor}
+        onRetake={retakeStory}
+        onDiscard={discardStory}
+        onPostStory={(storyData) => {
+          addStory(
+            storyData.mediaUrl,
+            storyData.caption || '',
+            storyData.musicTrack || undefined,
+            {
+              audioStartTime: 0,
+              clipDuration: 15,
+              originalVolume: 100,
+              musicVolume: 85,
+              mediaType: storyData.mediaType,
+            }
+          );
+          closeStoryEditor();
+          showToast('Story added to Your Story! ✨');
+          navigateTo('home');
+        }}
+      />
       <CopyrightDetailsModal
         isOpen={!!copyrightModalClaim}
         onClose={closeCopyrightModal}

@@ -35,6 +35,7 @@ import {
   Users,
   ChevronLeft,
   Plus,
+  Camera,
 } from 'lucide-react';
 import { CopyrightGuidelinesModal } from './CopyrightGuidelinesModal';
 import { DiscardModal } from './create/DiscardModal';
@@ -69,6 +70,7 @@ export const CreateModal: React.FC = () => {
     users,
     showToast,
     navigateTo,
+    openStoryCamera,
   } = useApp();
 
   // Multi-step Instagram creation flow
@@ -876,15 +878,29 @@ export const CreateModal: React.FC = () => {
               Supports MP4, MOV, WebM videos or high-resolution photos.
             </p>
 
-            {/* Instagram Primary Blue Button */}
-            <button
-              id="instagram-select-computer-btn"
-              type="button"
-              onClick={() => fileInputRef.current?.click()}
-              className="px-6 py-2.5 rounded-xl bg-[#0095F6] hover:bg-[#1877f2] text-white text-xs sm:text-sm font-bold shadow-lg shadow-[#0095F6]/30 active:scale-95 transition-all cursor-pointer"
-            >
-              Select from device
-            </button>
+            {/* Instagram Primary Blue Button & Story Camera Button */}
+            <div className="flex flex-col sm:flex-row items-center gap-3">
+              <button
+                id="instagram-select-computer-btn"
+                type="button"
+                onClick={() => fileInputRef.current?.click()}
+                className="px-6 py-2.5 rounded-xl bg-[#0095F6] hover:bg-[#1877f2] text-white text-xs sm:text-sm font-bold shadow-lg shadow-[#0095F6]/30 active:scale-95 transition-all cursor-pointer"
+              >
+                Select from device
+              </button>
+              <button
+                id="instagram-open-story-camera-btn"
+                type="button"
+                onClick={() => {
+                  closeCreateModal();
+                  openStoryCamera();
+                }}
+                className="px-6 py-2.5 rounded-xl bg-gradient-to-r from-[#FF4668] to-[#FF8A00] hover:brightness-110 text-white text-xs sm:text-sm font-bold shadow-lg shadow-[#FF4668]/30 active:scale-95 transition-all cursor-pointer flex items-center gap-2"
+              >
+                <Camera className="w-4 h-4" />
+                <span>Story Camera</span>
+              </button>
+            </div>
 
             <input
               ref={fileInputRef}

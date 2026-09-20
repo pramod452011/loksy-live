@@ -118,6 +118,19 @@ interface AppContextType {
   closeStoryViewer: () => void;
   nextStory: () => void;
   prevStory: () => void;
+  isStoryCameraOpen: boolean;
+  openStoryCamera: () => void;
+  closeStoryCamera: () => void;
+  isStoryEditorOpen: boolean;
+  capturedStoryMedia: {
+    url?: string | null;
+    blob?: Blob | null;
+    type: 'image' | 'video';
+  } | null;
+  openStoryEditor: (media: { url?: string | null; blob?: Blob | null; type: 'image' | 'video' }) => void;
+  closeStoryEditor: () => void;
+  retakeStory: () => void;
+  discardStory: () => void;
 
   // Reels
   reels: Reel[];
@@ -282,6 +295,13 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [stories, setStories] = useState<StoryGroup[]>([]);
   const [activeStoryUserId, setActiveStoryUserId] = useState<string | null>(null);
   const [activeStoryIndex, setActiveStoryIndex] = useState<number>(0);
+  const [isStoryCameraOpen, setIsStoryCameraOpen] = useState<boolean>(false);
+  const [isStoryEditorOpen, setIsStoryEditorOpen] = useState<boolean>(false);
+  const [capturedStoryMedia, setCapturedStoryMedia] = useState<{
+    url?: string | null;
+    blob?: Blob | null;
+    type: 'image' | 'video';
+  } | null>(null);
 
   const [reels, setReels] = useState<Reel[]>([]);
   const [activeReelIndex, setActiveReelIndex] = useState<number>(0);
@@ -1442,6 +1462,40 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
     }
   }, [activeStoryIndex, stories, activeStoryUserId]);
 
+  const openStoryCamera = useCallback(() => {
+    setIsStoryCameraOpen(true);
+    setIsStoryEditorOpen(false);
+    setCapturedStoryMedia(null);
+  }, []);
+
+  const closeStoryCamera = useCallback(() => {
+    setIsStoryCameraOpen(false);
+  }, []);
+
+  const openStoryEditor = useCallback((media: { url?: string | null; blob?: Blob | null; type: 'image' | 'video' }) => {
+    setCapturedStoryMedia(media);
+    setIsStoryCameraOpen(false);
+    setIsStoryEditorOpen(true);
+  }, []);
+
+  const closeStoryEditor = useCallback(() => {
+    setIsStoryEditorOpen(false);
+    setCapturedStoryMedia(null);
+  }, []);
+
+  const retakeStory = useCallback(() => {
+    setIsStoryEditorOpen(false);
+    setCapturedStoryMedia(null);
+    setIsStoryCameraOpen(true);
+  }, []);
+
+  const discardStory = useCallback(() => {
+    setIsStoryEditorOpen(false);
+    setIsStoryCameraOpen(false);
+    setCapturedStoryMedia(null);
+    navigateTo('home');
+  }, [navigateTo]);
+
   // Reels handlers
   const toggleLikeReel = useCallback(async (reelId: string) => {
     let willBeLiked = false;
@@ -2116,6 +2170,15 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
         closeStoryViewer,
         nextStory,
         prevStory,
+        isStoryCameraOpen,
+        openStoryCamera,
+        closeStoryCamera,
+        isStoryEditorOpen,
+        capturedStoryMedia,
+        openStoryEditor,
+        closeStoryEditor,
+        retakeStory,
+        discardStory,
 
         reels,
         activeReelIndex,
