@@ -296,7 +296,7 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
   const [comments, setComments] = useState<Record<string, Comment[]>>({});
   const [activeCommentPostId, setActiveCommentPostId] = useState<string | null>(null);
 
-  const [stories, setStories] = useState<StoryGroup[]>([]);
+  const [stories, setStories] = useState<StoryGroup[]>(INITIAL_STORIES);
   const [activeStoryUserId, setActiveStoryUserId] = useState<string | null>(null);
   const [activeStoryIndex, setActiveStoryIndex] = useState<number>(0);
   const [isStoryCameraOpen, setIsStoryCameraOpen] = useState<boolean>(false);
@@ -647,17 +647,44 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
           }
 
           const liveStories = Array.from(groupMap.values());
-          if (liveStories.length === 0) {
-            setStories(INITIAL_STORIES);
-          } else {
-            // Sort so current user's story group is first if present
-            liveStories.sort((a, b) => {
+          setStories((prev) => {
+            const prevMeGroup = prev.find((g) => g.userId === currentUser.id);
+            const liveMeGroupIndex = liveStories.findIndex((g) => g.userId === currentUser.id);
+
+            const mergedList = [...liveStories];
+
+            if (prevMeGroup && prevMeGroup.stories.length > 0) {
+              if (liveMeGroupIndex >= 0) {
+                const liveMeGroup = mergedList[liveMeGroupIndex];
+                const existingStoryIds = new Set(liveMeGroup.stories.map((s) => s.id));
+                const pendingStories = prevMeGroup.stories.filter((s) => !existingStoryIds.has(s.id));
+                mergedList[liveMeGroupIndex] = {
+                  ...liveMeGroup,
+                  hasUnseenStories: prevMeGroup.hasUnseenStories || liveMeGroup.hasUnseenStories,
+                  stories: [...pendingStories, ...liveMeGroup.stories],
+                };
+              } else {
+                mergedList.unshift(prevMeGroup);
+              }
+            }
+
+            // Always make sure initial demo story groups exist if not present in Firestore
+            const liveUserIds = new Set(mergedList.map((g) => g.userId));
+            for (const initGroup of INITIAL_STORIES) {
+              if (!liveUserIds.has(initGroup.userId) && initGroup.userId !== currentUser.id) {
+                mergedList.push(initGroup);
+              }
+            }
+
+            // Sort so current user is always first
+            mergedList.sort((a, b) => {
               if (a.userId === currentUser.id) return -1;
               if (b.userId === currentUser.id) return 1;
               return 0;
             });
-            setStories(liveStories);
-          }
+
+            return mergedList;
+          });
         },
         (error) => {
           console.warn('[Firestore] Stories listener error:', error);
@@ -1391,27 +1418,27 @@ export const AppProvider: React.FC<{ children: React.ReactNode }> = ({ children 
       const meGroupIndex = prev.findIndex(g => g.userId === currentUser.id);
       if (meGroupIndex >= 0) {
         const updated = [...prev];
+        const existingGroup = updated[meGroupIndex];
+        const filteredOld = (existingGroup.stories || []).filter(s => s.id !== storyId);
         updated[meGroupIndex] = {
-          ...updated[meGroupIndex],
+          ...existingGroup,
           hasUnseenStories: true,
-          stories: [newStory, ...updated[meGroupIndex].stories],
+          stories: [newStory, ...filteredOld],
         };
         return updated;
       } else {
-        return [
-          {
-            userId: currentUser.id,
-            user: {
-              id: currentUser.id,
-              name: 'Your Story',
-              username: currentUser.username,
-              avatar: currentUser.avatar,
-            },
-            hasUnseenStories: false,
-            stories: [newStory],
+        const newGroup: StoryGroup = {
+          userId: currentUser.id,
+          user: {
+            id: currentUser.id,
+            name: currentUser.name || 'Your Story',
+            username: currentUser.username,
+            avatar: currentUser.avatar,
           },
-          ...prev,
-        ];
+          hasUnseenStories: true,
+          stories: [newStory],
+        };
+        return [newGroup, ...prev];
       }
     });
 

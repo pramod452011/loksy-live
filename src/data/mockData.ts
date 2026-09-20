@@ -303,20 +303,11 @@ export const INITIAL_STORIES: StoryGroup[] = [
     user: {
       id: 'user_me',
       name: 'Your Story',
-      username: 'aarav_sharma',
-      avatar: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80',
+      username: 'creator',
+      avatar: 'https://images.unsplash.com/photo-1535713875002-d1d0cf377fde?w=400&auto=format&fit=crop&q=80',
     },
     hasUnseenStories: false,
-    stories: [
-      {
-        id: 'story_me_1',
-        mediaUrl: 'https://images.unsplash.com/photo-1518684079-3c830dcef090?w=800&auto=format&fit=crop&q=80',
-        mediaType: 'image',
-        caption: 'Morning jamming at studio! ☕🎶',
-        createdAt: '3h ago',
-        duration: 5,
-      }
-    ]
+    stories: [],
   },
   {
     userId: 'user_1',

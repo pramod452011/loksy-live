@@ -72,8 +72,9 @@ export const StoryBar: React.FC = () => {
     setMusicVolume(85);
   };
 
-  const myStoryGroup = stories.find(s => s.userId === currentUser.id);
-  const otherStories = stories.filter(s => s.userId !== currentUser.id);
+  const myStoryGroup = stories.find((s) => s.userId === currentUser.id);
+  const otherStories = stories.filter((s) => s.userId !== currentUser.id);
+  const hasMyStories = Boolean(myStoryGroup && myStoryGroup.stories && myStoryGroup.stories.length > 0);
 
   return (
     <div
@@ -87,16 +88,16 @@ export const StoryBar: React.FC = () => {
             <div
               id="story-circle-me"
               onClick={() => {
-                if (myStoryGroup && myStoryGroup.stories && myStoryGroup.stories.length > 0) {
-                  openStoryViewer(currentUser.id);
+                if (hasMyStories) {
+                  openStoryViewer(currentUser.id, 0);
                 } else {
                   openStoryCamera();
                 }
               }}
-              className={`w-16 h-16 rounded-full p-[2.5px] transition-transform active:scale-95 ${
-                myStoryGroup && myStoryGroup.stories && myStoryGroup.stories.length > 0
-                  ? 'bg-gradient-to-tr from-[#FF4668] via-[#FF8A00] to-[#E040FB]'
-                  : 'border border-dashed border-gray-600'
+              className={`w-16 h-16 rounded-full p-[2.5px] transition-all duration-200 group-hover:scale-105 active:scale-95 ${
+                hasMyStories
+                  ? 'bg-gradient-to-tr from-[#FF4668] via-[#FF8A00] to-[#E040FB] shadow-md shadow-[#FF4668]/40 ring-2 ring-[#FF4668]/30'
+                  : 'border-2 border-dashed border-gray-600 hover:border-gray-400'
               }`}
             >
               <div className="w-full h-full rounded-full overflow-hidden bg-[#070A12] border-2 border-[#070A12]">
@@ -117,7 +118,7 @@ export const StoryBar: React.FC = () => {
                 openStoryCamera();
               }}
               className="absolute bottom-0 right-0 w-5 h-5 rounded-full bg-gradient-to-r from-[#FF4668] to-[#FF8A00] text-white flex items-center justify-center border-2 border-[#070A12] shadow-md hover:scale-110 active:scale-95 transition-transform cursor-pointer"
-              title="Add Story"
+              title={hasMyStories ? 'Add another story' : 'Add Story'}
             >
               <Plus className="w-3.5 h-3.5 stroke-[3]" />
             </button>

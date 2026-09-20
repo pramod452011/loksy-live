@@ -159,8 +159,8 @@ const MainLayout: React.FC = () => {
             {
               audioStartTime: 0,
               clipDuration: 15,
-              originalVolume: 100,
-              musicVolume: 85,
+              originalVolume: storyData.originalVolume ?? 100,
+              musicVolume: storyData.musicVolume ?? 85,
               mediaType: storyData.mediaType,
             }
           );

@@ -66,6 +66,8 @@ export interface StoryEditorProps {
     musicTrack?: MusicTrack | null;
     stickers?: string[];
     textOverlay?: string;
+    originalVolume?: number;
+    musicVolume?: number;
   }) => void;
   onDiscard?: () => void;
 }
@@ -773,7 +775,7 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
     }
   };
 
-  const handlePublishStory = () => {
+  const handlePublishStory = async () => {
     if (!activeMediaUrl) return;
 
     if (storyAudioRef.current) {
@@ -783,27 +785,62 @@ export const StoryEditor: React.FC<StoryEditorProps> = ({
       previewAudioRef.current.pause();
     }
 
+    let persistentMediaUrl = activeMediaUrl;
+    if (mediaBlob) {
+      try {
+        persistentMediaUrl = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => resolve(activeMediaUrl);
+          reader.readAsDataURL(mediaBlob);
+        });
+      } catch (e) {
+        console.warn('Error reading media blob as dataURL:', e);
+      }
+    } else if (activeMediaUrl.startsWith('blob:')) {
+      try {
+        const res = await fetch(activeMediaUrl);
+        const b = await res.blob();
+        persistentMediaUrl = await new Promise<string>((resolve) => {
+          const reader = new FileReader();
+          reader.onload = () => resolve(reader.result as string);
+          reader.onerror = () => resolve(activeMediaUrl);
+          reader.readAsDataURL(b);
+        });
+      } catch (e) {
+        console.warn('Error converting blob url to dataURL:', e);
+      }
+    }
+
     const stickerStrings = stickers.map((s) => s.content);
+    const finalOriginalVol = detectedMediaType === 'video' ? (isMuted ? 0 : videoAudioVolume) : 0;
+    const finalMusicVol = isMuted ? 0 : musicAudioVolume;
 
     if (onPostStory) {
       onPostStory({
-        mediaUrl: activeMediaUrl,
+        mediaUrl: persistentMediaUrl,
         mediaType: detectedMediaType,
-        caption: textItem.text || (stickerStrings.length > 0 ? stickerStrings.join(' ') : undefined),
-        musicTrack: selectedMusic,
+        caption: textItem.text || (stickerStrings.length > 0 ? stickerStrings.join(' ') : (selectedMusic ? `🎵 ${selectedMusic.title}` : undefined)),
+        musicTrack: selectedMusic ? {
+          ...selectedMusic,
+          originalVolume: finalOriginalVol,
+          musicVolume: finalMusicVol,
+        } : null,
         stickers: stickerStrings.length > 0 ? stickerStrings : undefined,
         textOverlay: textItem.text || undefined,
+        originalVolume: finalOriginalVol,
+        musicVolume: finalMusicVol,
       });
     } else if (addStory) {
       addStory(
-        activeMediaUrl,
+        persistentMediaUrl,
         textItem.text || (stickerStrings.length > 0 ? stickerStrings.join(' ') : (selectedMusic ? `🎵 ${selectedMusic.title}` : '')),
         selectedMusic || undefined,
         {
           audioStartTime: 0,
           clipDuration: 15,
-          originalVolume: detectedMediaType === 'video' && !isMuted ? videoAudioVolume : 0,
-          musicVolume: isMuted ? 0 : musicAudioVolume,
+          originalVolume: finalOriginalVol,
+          musicVolume: finalMusicVol,
           mediaType: detectedMediaType,
         }
       );
